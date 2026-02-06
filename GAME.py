@@ -284,17 +284,17 @@ class Enemy:
         
         # Базовые характеристики в зависимости от типа
         base_stats = {
-            EnemyType.GOBLIN: {"health": 30, "damage": 5, "defense": 2, "xp": 10, "gold": (3, 8)},
-            EnemyType.ORC: {"health": 40, "damage": 8, "defense": 5, "xp": 20, "gold": (5, 12)},
-            EnemyType.WOLF: {"health": 20, "damage": 6, "defense": 1, "xp": 8, "gold": (2, 6)},
-            EnemyType.SKELETON: {"health": 30, "damage": 7, "defense": 3, "xp": 15, "gold": (4, 10)},
+            EnemyType.GOBLIN: {"health": 30, "damage": 5, "defense": 2, "xp": 30, "gold": (20, 25)},
+            EnemyType.ORC: {"health": 40, "damage": 8, "defense": 5, "xp": 30, "gold": (25, 30)},
+            EnemyType.WOLF: {"health": 20, "damage": 6, "defense": 1, "xp": 15, "gold": (10, 20)},
+            EnemyType.SKELETON: {"health": 30, "damage": 7, "defense": 3, "xp": 15, "gold": (10, 15)},
             EnemyType.TROLL: {"health": 55, "damage": 12, "defense": 8, "xp": 30, "gold": (10, 25)},
-            EnemyType.DRAGON: {"health": 200, "damage": 25, "defense": 15, "xp": 100, "gold": (50, 100)},
-            EnemyType.BANDIT: {"health": 35, "damage": 6, "defense": 4, "xp": 15, "gold": (8, 20)},
-            EnemyType.SPIDER: {"health": 15, "damage": 4, "defense": 1, "xp": 6, "gold": (1, 4)},
-            EnemyType.WITCH: {"health": 40, "damage": 9, "defense": 3, "xp": 25, "gold": (15, 30)},
-            EnemyType.NECROMANCER: {"health": 60, "damage": 11, "defense": 6, "xp": 35, "gold": (20, 40)},
-            EnemyType.SLIME: {"health": 25, "damage": 3, "defense": 1, "xp": 5, "gold": (1, 3)}
+            EnemyType.DRAGON: {"health": 200, "damage": 25, "defense": 15, "xp": 150, "gold": (50, 100)},
+            EnemyType.BANDIT: {"health": 35, "damage": 6, "defense": 4, "xp": 20, "gold": (20, 25)},
+            EnemyType.SPIDER: {"health": 15, "damage": 4, "defense": 1, "xp": 20, "gold": (10, 15)},
+            EnemyType.WITCH: {"health": 40, "damage": 9, "defense": 3, "xp": 30, "gold": (15, 30)},
+            EnemyType.NECROMANCER: {"health": 60, "damage": 11, "defense": 6, "xp": 40, "gold": (20, 40)},
+            EnemyType.SLIME: {"health": 25, "damage": 3, "defense": 1, "xp": 20, "gold": (10, 20)}
         }
         
         stats = base_stats.get(enemy_type, base_stats[EnemyType.GOBLIN])
@@ -1538,7 +1538,7 @@ class Game:
     
     # ОПТИМИЗАЦИЯ: унифицированный метод для создания полосок
     def create_bar(self, current: int, maximum: int, length: int = 20, color_good: str = Color.GREEN, 
-                  color_medium: str = Color.YELLOW, color_bad: str = Color.RED) -> str:
+                  color_medium: str = Color.GREEN, color_bad: str = Color.END) -> str:
         """Создание полоски с улучшениями"""
         if maximum <= 0:
             return f"[{'█' * length}] 0/0"
@@ -1573,7 +1573,7 @@ class Game:
         print(f"Опыт: {self.player.xp}/{self.player.xp_to_next_level}")
         
         health_bar = self.create_bar(self.player.health, self.player.max_health, 25)
-        mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 25, Color.BLUE, Color.PURPLE, Color.PURPLE)
+        mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 25, Color.BLUE, Color.BLUE, Color.PURPLE)
         
         print(f"Здоровье: {health_bar}")
         print(f"Мана:     {mana_bar}")
@@ -2588,7 +2588,7 @@ class Game:
             
             print(f"{Color.GREEN}{self.player.name} (Ур.{self.player.level}){Color.END}")
             health_bar = self.create_bar(self.player.health, self.player.max_health, 30)
-            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 30, Color.BLUE, Color.PURPLE, Color.PURPLE)
+            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 30, Color.BLUE, Color.BLUE, Color.PURPLE)
             print(f"Здоровье: {health_bar}")
             print(f"Мана:     {mana_bar}")
             
@@ -4404,7 +4404,7 @@ class Game:
             
             print(f"\n{Color.GREEN}{self.player.name} (Ур.{self.player.level}){Color.END}")
             health_bar = self.create_bar(self.player.health, self.player.max_health, 20)
-            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 20, Color.BLUE, Color.PURPLE, Color.PURPLE)
+            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 20, Color.BLUE, Color.BLUE, Color.PURPLE)
             print(f"Здоровье: {health_bar}")
             print(f"Мана:     {mana_bar}")
             print(f"Золото: {Color.YELLOW}{self.player.gold}{Color.END}")

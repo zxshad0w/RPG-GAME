@@ -1,6 +1,6 @@
 """
-МЕГА RPG ИГРА "ДРАКОНОВОЕ ЗАКЛИНАНИЕ" - УЛУЧШЕННАЯ ВЕРСИЯ 2.0.2
-Исправления и новые функции: маг, локации, бордель, блэкджек
+МЕГА RPG ИГРА "ДРАКОНОВОЕ ЗАКЛИНАНИЕ" - УЛУЧШЕННАЯ ВЕРСИЯ 2.0.3
+Исправления: увеличены враги на локациях, добавлен функционал для оружия, оптимизация кода
 """
 
 import random
@@ -65,7 +65,7 @@ class LocationType(Enum):
     RUINS = "Руины"
     SWAMP = "Болото"
     BEACH = "Пляж"
-    BORDELLO = "Бордель"  # Новая локация
+    BORDELLO = "Бордель"
 
 class EnemyType(Enum):
     """Типы врагов"""
@@ -79,6 +79,7 @@ class EnemyType(Enum):
     SPIDER = "Паук"
     WITCH = "Ведьма"
     NECROMANCER = "Некромант"
+    SLIME = "Слизень"  # Добавим для достижений
 
 class Difficulty(Enum):
     """Уровни сложности"""
@@ -114,7 +115,7 @@ class Deck:
         suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades']
         ranks = {
             '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10,
-            'J': 10, 'Q': 10, 'K': 10, 'A': 11  # Туз может быть 1 или 11
+            'J': 10, 'Q': 10, 'K': 10, 'A': 11
         }
         
         self.cards = []
@@ -136,7 +137,8 @@ class Item:
                 damage: int = 0, defense: int = 0, health: int = 0,
                 mana: int = 0, description: str = "", durability: int = 100,
                 required_level: int = 1, armor_slot: str = None,
-                character_classes: List[CharacterClass] = None):
+                character_classes: List[CharacterClass] = None,
+                special_effect: str = None):
         self.id = random.randint(1000, 9999)
         self.name = name
         self.item_type = item_type
@@ -149,7 +151,8 @@ class Item:
         self.durability = durability
         self.max_durability = durability
         self.required_level = required_level
-        self.armor_slot = armor_slot  # Для брони указывает конкретный слот
+        self.armor_slot = armor_slot
+        self.special_effect = special_effect  # Специальный эффект оружия
         self.rarity = self.calculate_rarity()
         self.character_classes = character_classes or [CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]
     
@@ -211,7 +214,9 @@ class Item:
             description=self.description,
             durability=self.durability,
             required_level=self.required_level,
-            armor_slot=self.armor_slot
+            armor_slot=self.armor_slot,
+            character_classes=self.character_classes,
+            special_effect=self.special_effect
         )
         new_item.id = self.id
         new_item.rarity = self.rarity
@@ -220,6 +225,54 @@ class Item:
     def is_equippable(self, player_level: int) -> bool:
         """Проверка, может ли игрок экипировать предмет"""
         return player_level >= self.required_level
+    
+    def apply_special_effect(self, player, enemy=None) -> Tuple[int, str]:
+        """Применение специального эффекта оружия"""
+        if not self.special_effect:
+            return 0, ""
+        
+        effect = self.special_effect
+        if effect == "fire_damage":
+            # Дополнительный огненный урон
+            bonus_damage = random.randint(3, 8)
+            return bonus_damage, f"{Color.RED}Огненный урон! +{bonus_damage}{Color.END}"
+        
+        elif effect == "mana_steal":
+            # Кража маны
+            mana_steal = random.randint(5, 15)
+            if enemy and hasattr(enemy, 'type') and enemy.type == EnemyType.NECROMANCER:
+                # Некроманты дают больше маны
+                mana_steal *= 2
+            player.mana = min(player.max_mana, player.mana + mana_steal)
+            return 0, f"{Color.BLUE}Кража маны! +{mana_steal} маны{Color.END}"
+        
+        elif effect == "critical_chance":
+            # Увеличенный шанс крита
+            player.stats["luck"] += 3  # Временный бонус
+            return 0, f"{Color.YELLOW}Увеличен шанс критического удара!{Color.END}"
+        
+        elif effect == "poison":
+            # Ядовитый урон
+            poison_damage = random.randint(2, 5)
+            return poison_damage, f"{Color.GREEN}Ядовитый урон! +{poison_damage} в течение 3 ходов{Color.END}"
+        
+        elif effect == "life_steal":
+            # Кража здоровья
+            life_steal = random.randint(3, 10)
+            player.heal(life_steal)
+            return 0, f"{Color.RED}Кража здоровья! +{life_steal} HP{Color.END}"
+        
+        elif effect == "stun_chance":
+            # Шанс оглушения
+            stun_chance = random.random()
+            if stun_chance < 0.2:  # 20% шанс оглушить
+                return 0, f"{Color.PURPLE}Противник оглушен на 1 ход!{Color.END}"
+        
+        elif effect == "armor_penetration":
+            # Пробивание брони
+            return 5, f"{Color.CYAN}Пробитие брони! Игнорирует 5 защиты{Color.END}"
+        
+        return 0, ""
 
 class Enemy:
     """Класс врага с улучшениями"""
@@ -240,7 +293,8 @@ class Enemy:
             EnemyType.BANDIT: {"health": 35, "damage": 6, "defense": 4, "xp": 15, "gold": (8, 20)},
             EnemyType.SPIDER: {"health": 15, "damage": 4, "defense": 1, "xp": 6, "gold": (1, 4)},
             EnemyType.WITCH: {"health": 40, "damage": 9, "defense": 3, "xp": 25, "gold": (15, 30)},
-            EnemyType.NECROMANCER: {"health": 60, "damage": 11, "defense": 6, "xp": 35, "gold": (20, 40)}
+            EnemyType.NECROMANCER: {"health": 60, "damage": 11, "defense": 6, "xp": 35, "gold": (20, 40)},
+            EnemyType.SLIME: {"health": 25, "damage": 3, "defense": 1, "xp": 5, "gold": (1, 3)}
         }
         
         stats = base_stats.get(enemy_type, base_stats[EnemyType.GOBLIN])
@@ -286,6 +340,8 @@ class Enemy:
             abilities.append("Воскрешение скелетов")
         elif self.type == EnemyType.SPIDER:
             abilities.append("Ядовитый укус")
+        elif self.type == EnemyType.SLIME:
+            abilities.append("Кислотная атака")
         
         return abilities
     
@@ -305,6 +361,13 @@ class Enemy:
         elif ability == "Ядовитый укус":
             damage = int(self.damage * 1.2)
             return damage, f"{self.name} использует Ядовитый укус! (яд)"
+        elif ability == "Кислотная атака":
+            damage = int(self.damage * 0.8)
+            armor_reduction = 2
+            return damage, f"{self.name} использует Кислотную атаку! (-{armor_reduction} защиты)"
+        elif ability == "Воскрешение скелетов":
+            # Здесь можно было бы добавить логику воскрешения
+            return 0, f"{self.name} пытается воскресить скелетов!"
         
         return 0, ""
 
@@ -329,13 +392,14 @@ class Location:
         self.cleared = False
         self.respawn_timer = 0
         
-        # Генерация врагов для локации
+        # Генерация врагов для локации - ИСПРАВЛЕНО: увеличение количества врагов
         self.generate_enemies()
     
     def generate_enemies(self):
-        """Генерация врагов для локации"""
+        """Генерация врагов для локации - ИСПРАВЛЕНО: теперь 5-10 врагов"""
         enemy_types = list(EnemyType)
-        num_enemies = random.randint(2, 8)
+        # Генерируем от 5 до 10 врагов вместо 2-8
+        num_enemies = random.randint(5, 10)
         
         for _ in range(num_enemies):
             enemy_type = random.choice(enemy_types)
@@ -364,7 +428,10 @@ class Location:
             "Вы обнаружили тайный проход",
             "Вы наткнулись на странные символы",
             "Вы чувствуете магическую энергию",
-            "Вы слышите странные звуки"
+            "Вы слышите странные звуки",
+            "Вы нашли древнюю надпись",
+            "Вы чувствуете дрожь земли",
+            "Вы видите странное свечение"
         ]
         return random.choice(events)
 
@@ -382,7 +449,7 @@ class Quest:
         self.reward_gold = reward_gold
         self.required_level = required_level
         self.quest_type = quest_type
-        self.time_limit = time_limit  # В минутах, 0 = без ограничения
+        self.time_limit = time_limit
         self.start_time = None
         self.objectives = {}
         self.completed_objectives = {}
@@ -408,7 +475,6 @@ class Quest:
             if self.objectives[objective]["current"] >= self.objectives[objective]["count"]:
                 self.completed_objectives[objective] = True
                 
-                # Проверка завершения всех целей
                 if all(obj in self.completed_objectives for obj in self.objectives):
                     self.status = QuestStatus.COMPLETED
                     return True
@@ -430,7 +496,7 @@ class Achievement:
                  target_value: int, reward_xp: int = 0, reward_gold: int = 0):
         self.name = name
         self.description = description
-        self.condition = condition  # "kill_enemy", "level_up", "complete_quest", etc.
+        self.condition = condition
         self.target_value = target_value
         self.reward_xp = reward_xp
         self.reward_gold = reward_gold
@@ -527,6 +593,7 @@ class Player:
         self.achievements = []
         self.daily_quests = []
         self.last_login = datetime.now()
+        self.active_effects = {}  # Активные эффекты от предметов
         
         # Статистика
         self.stats = {
@@ -538,8 +605,8 @@ class Player:
         }
         
         # Новые характеристики
-        self.morale = 100  # Боевой дух
-        self.stamina = 100  # Выносливость
+        self.morale = 100
+        self.stamina = 100
         
         # Модификатор сложности
         self.difficulty_mult = {
@@ -568,10 +635,9 @@ class Player:
         ]
     
     def set_class(self, char_class: CharacterClass):
-        """Установка класса персонажа - ИСПРАВЛЕНА ОШИБКА С МАГОМ"""
+        """Установка класса персонажа"""
         self.character_class = char_class
         
-        # Бонусы за класс
         class_bonuses = {
             CharacterClass.WARRIOR: {"strength": 7, "constitution": 5, "health": 20},
             CharacterClass.MAGE: {"intelligence": 10, "max_mana": 30, "mana": 50},
@@ -605,32 +671,40 @@ class Player:
         if self.mana > self.max_mana:
             self.mana = self.max_mana
     
-    def attack(self) -> Tuple[int, str]:
-        """Атака игрока"""
+    def attack(self, enemy=None) -> Tuple[int, str]:
+        """Атака игрока - ДОБАВЛЕН ФУНКЦИОНАЛ СПЕЦИАЛЬНЫХ ЭФФЕКТОВ ОРУЖИЯ"""
         base_damage = self.stats["strength"] // 2
         
-        # Маги получают дополнительный урон от интеллекта
         if self.character_class == CharacterClass.MAGE:
             base_damage += self.stats["intelligence"] // 3
+        
+        special_damage = 0
+        special_message = ""
         
         if self.equipped["weapon"]:
             weapon = self.equipped["weapon"]
             base_damage += weapon.damage
-            # Износ оружия
+            
+            # Применение специального эффекта оружия
+            if weapon.special_effect and enemy:
+                effect_damage, effect_message = weapon.apply_special_effect(self, enemy)
+                special_damage += effect_damage
+                if effect_message:
+                    special_message = effect_message
+            
             weapon.degrade()
         
         # Критический удар
         crit_chance = (self.stats["dexterity"] + self.stats["luck"]) / 200
         is_critical = random.random() < crit_chance
         
-        # Шанс промаха
         miss_chance = max(0, 0.05 - (self.stats["dexterity"] / 500))
         is_miss = random.random() < miss_chance
         
         if is_miss:
             return 0, f"{self.name} промахивается!"
         
-        damage = base_damage
+        damage = base_damage + special_damage
         message = f"{self.name} атакует"
         
         if is_critical:
@@ -639,8 +713,10 @@ class Player:
         else:
             damage = random.randint(int(damage * 0.8), int(damage * 1.2))
         
-        # Учет сложности
         damage = int(damage * self.difficulty_mult)
+        
+        if special_message:
+            message += f" {special_message}"
         
         return damage, message
     
@@ -648,24 +724,18 @@ class Player:
         """Получение урона"""
         defense = self.stats["constitution"] // 3
         
-        # Защита от брони
         for slot in ["armor", "helmet", "gloves", "boots"]:
             if self.equipped[slot]:
                 defense += self.equipped[slot].defense
-                # Износ брони
                 self.equipped[slot].degrade()
         
-        # Уклонение
         dodge_chance = self.stats["dexterity"] / 300
         is_dodged = random.random() < dodge_chance
         
         if is_dodged:
-            print(f"{Color.GREEN}{self.name} уклоняется от атаки!{Color.END}")
             return False
         
         actual_damage = max(1, damage - defense)
-        
-        # Учет сложности
         actual_damage = int(actual_damage / self.difficulty_mult)
         
         self.health -= actual_damage
@@ -682,11 +752,9 @@ class Player:
     
     def gain_xp(self, amount: int) -> bool:
         """Получение опыта"""
-        # Учет сложности
         actual_amount = int(amount * self.difficulty_mult)
         self.xp += actual_amount
         
-        # Проверка достижений
         self.check_achievement("level_up", 0)
         
         if self.xp >= self.xp_to_next_level:
@@ -700,14 +768,12 @@ class Player:
         self.xp -= self.xp_to_next_level
         self.xp_to_next_level = int(self.xp_to_next_level * 1.4)
         
-        # Увеличение характеристик
         self.stats["strength"] += 2
         self.stats["dexterity"] += 2
         self.stats["intelligence"] += 2
         self.stats["constitution"] += 2
         self.stats["luck"] += 1
         
-        # Дополнительные очки за класс
         class_bonus_stats = {
             CharacterClass.WARRIOR: {"strength": 3, "constitution": 2},
             CharacterClass.MAGE: {"intelligence": 3},
@@ -730,17 +796,14 @@ class Player:
         print(f"Здоровье: {self.health}/{self.max_health}")
         print(f"Мана: {self.mana}/{self.max_mana}")
         
-        # Проверка достижений
         for achievement in self.achievements:
             if achievement.condition == "level_up":
                 achievement.update()
     
     def add_item(self, item: Item):
         """Добавление предмета в инвентарь"""
-        if len(self.inventory) < 40:  # Ограничение инвентаря
+        if len(self.inventory) < 40:
             self.inventory.append(item)
-            
-            # Проверка достижений
             self.check_achievement("collect_item", 1)
         else:
             print(f"{Color.RED}Инвентарь полон!{Color.END}")
@@ -757,12 +820,10 @@ class Player:
         if item not in self.inventory:
             return False
         
-        # Проверка уровня
         if not item.is_equippable(self.level):
             print(f"{Color.RED}Ваш уровень слишком низок для этого предмета!{Color.END}")
             return False
         
-        # Определяем слот для предмета
         slot_map = {
             ItemType.WEAPON: "weapon",
             ItemType.ARMOR: "armor",
@@ -775,18 +836,15 @@ class Player:
         
         slot = slot_map.get(item.item_type)
         
-        # Если предмет броня и у него указан конкретный слот, используем его
         if item.item_type == ItemType.ARMOR and item.armor_slot:
             slot = item.armor_slot
         
         if not slot:
             return False
         
-        # Снимаем текущую экипировку
         if self.equipped[slot]:
             self.inventory.append(self.equipped[slot])
         
-        # Экипируем новый предмет
         self.equipped[slot] = item
         self.inventory.remove(item)
         
@@ -813,46 +871,11 @@ class Player:
                     print(f"{achievement.description}")
                     print(f"Награда: {achievement.reward_xp} опыта, {achievement.reward_gold} золота")
                     
-                    # Выдача награды
                     self.xp += achievement.reward_xp
                     self.gold += achievement.reward_gold
                     
-                    # Проверка нового уровня
                     if self.xp >= self.xp_to_next_level:
                         self.level_up()
-    
-    def get_total_play_time(self) -> str:
-        """Получение общего времени игры"""
-        total_seconds = self.play_time
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-    
-    def update_daily_quests(self):
-        """Обновление ежедневных квестов"""
-        now = datetime.now()
-        if now.date() > self.last_login.date():
-            self.daily_quests = self.generate_daily_quests()
-            self.last_login = now
-    
-    def generate_daily_quests(self) -> List[Quest]:
-        """Генерация ежедневных квестов"""
-        daily_quests = []
-        
-        quest_templates = [
-            ("Охота на монстров", "Убейте 5 случайных монстров", "", 100, 50, 1, "daily"),
-            ("Сбор ресурсов", "Соберите 10 единиц ресурсов", "", 80, 40, 1, "daily"),
-            ("Поход в подземелье", "Исследуйте одно подземелье", "", 150, 75, 3, "daily")
-        ]
-        
-        for i in range(min(3, len(quest_templates))):
-            name, desc, loc, xp, gold, level, q_type = quest_templates[i]
-            quest = Quest(name, desc, loc, xp, gold, level, q_type, 24*60)  # 24 часа
-            quest.add_objective(f"Цель {i+1}", "Задание", 1)
-            daily_quests.append(quest)
-        
-        return daily_quests
 
 class Game:
     """Основной класс игры с улучшениями"""
@@ -865,13 +888,11 @@ class Game:
         self.current_battle = None
         self.game_start_time = None
         self.difficulty = Difficulty.NORMAL
-        self.version = "2.0.2"  # Обновили версию
+        self.version = "2.0.3"  # Обновили версию
         
-        # Бордель
         self.bordello_girls = []
         self.initialize_bordello()
         
-        # Инициализация игрового мира
         self.initialize_world()
         self.initialize_items()
         self.initialize_quests()
@@ -880,11 +901,11 @@ class Game:
         """Инициализация борделя"""
         girls = [
             BordelloGirl("Лилиана", "Массаж", 50, "Искусная массажистка, снимает усталость и напряжение"),
-            BordelloGirl("Кларисса", "Танцы", 30, "Страстная танцовщица, поднимает боевой дух"),
+            BordelloGirl("Кларисса", "Танды", 30, "Страстная танцовщица, поднимает боевой дух"),
             BordelloGirl("Изольда", "Беседа", 20, "Умная собеседница, может дать полезные советы"),
             BordelloGirl("Маргарита", "Особое внимание", 100, "Опытная куртизанка, оказывает полный спектр услуг"),
             BordelloGirl("Бьянка", "Массаж", 40, "Молодая, но талантливая массажистка"),
-            BordelloGirl("Эльвира", "Танцы", 25, "Гибкая и грациозная танцовщица")
+            BordelloGirl("Эльвира", "Танды", 25, "Гибкая и грациозная танцовщица")
         ]
         
         self.bordello_girls = girls
@@ -944,84 +965,160 @@ class Game:
         for loc in locations:
             self.game_world[loc.name] = loc
         
-        # Стартовая деревня всегда открыта
         self.game_world["Стартовая деревня"].discovered = True
     
     def initialize_items(self):
-        """Инициализация предметов с улучшениями - С УЧЕТОМ КЛАССОВ"""
-    # Оружие для всех классов
+        """Инициализация предметов - ДОБАВЛЕНЫ СПЕЦИАЛЬНЫЕ ЭФФЕКТЫ ДЛЯ ОРУЖИЯ"""
+        # Оружие для всех классов с специальными эффектами
         weapons = [
+            # Оружие для Воина
             Item("Деревянный меч", ItemType.WEAPON, value=10, damage=3, 
                 description="Простой деревянный меч", durability=50, required_level=1,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Стальной меч", ItemType.WEAPON, value=50, damage=8, 
                 description="Надежный стальной меч", durability=100, required_level=3,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Драконий клинок", ItemType.WEAPON, value=500, damage=25, 
                 description="Меч, выкованный из когтя дракона", durability=150, required_level=15,
-                character_classes=[CharacterClass.WARRIOR]),
+                character_classes=[CharacterClass.WARRIOR],
+                special_effect="fire_damage"),  # Огненный урон
+            
             Item("Секира варвара", ItemType.WEAPON, value=80, damage=12,
                 description="Тяжелая, но смертоносная секира", durability=90, required_level=6,
-                character_classes=[CharacterClass.WARRIOR]),
+                character_classes=[CharacterClass.WARRIOR],
+                special_effect="armor_penetration"),  # Пробитие брони
             
-            # Оружие для мага
+            # Новое оружие для Воина
+            Item("Молот Света", ItemType.WEAPON, value=200, damage=15,
+                description="Благословенный молот, светящийся священным светом", 
+                durability=120, required_level=8,
+                character_classes=[CharacterClass.WARRIOR],
+                special_effect="stun_chance"),  # Шанс оглушения
+            
+            Item("Ледяной меч", ItemType.WEAPON, value=180, damage=13,
+                description="Меч, выкованный из вечного льда", 
+                durability=110, required_level=7,
+                character_classes=[CharacterClass.WARRIOR],
+                special_effect="fire_damage"),  # Ледяной урон (используем fire_damage как базовый)
+            
+            # Оружие для Мага
             Item("Магический посох", ItemType.WEAPON, value=100, damage=5, mana=20, 
                 description="Посох, усиливающий магию", durability=80, required_level=5,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Жезл волшебника", ItemType.WEAPON, value=120, damage=6, mana=30,
                 description="Мощный жезл для заклинаний", durability=70, required_level=7,
-                character_classes=[CharacterClass.MAGE]),
+                character_classes=[CharacterClass.MAGE],
+                special_effect="mana_steal"),  # Кража маны
+            
             Item("Кристальный скипетр", ItemType.WEAPON, value=180, damage=8, mana=40,
                 description="Скипетр с магическим кристаллом", durability=90, required_level=10,
-                character_classes=[CharacterClass.MAGE]),
+                character_classes=[CharacterClass.MAGE],
+                special_effect="fire_damage"),  # Магический урон
+            
             Item("Книга заклинаний", ItemType.WEAPON, value=60, damage=3, mana=50,
                 description="Древняя книга с магическими формулами", durability=40, required_level=3,
                 character_classes=[CharacterClass.MAGE]),
             
-            # Оружие для лучника
+            # Новое оружие для Мага
+            Item("Посох Некроманта", ItemType.WEAPON, value=220, damage=10, mana=60,
+                description="Посох, вырезанный из кости дракона", 
+                durability=100, required_level=12,
+                character_classes=[CharacterClass.MAGE],
+                special_effect="life_steal"),  # Кража жизни
+            
+            Item("Жезл Стихий", ItemType.WEAPON, value=160, damage=9, mana=45,
+                description="Жезл, контролирующий четыре стихии", 
+                durability=85, required_level=9,
+                character_classes=[CharacterClass.MAGE],
+                special_effect="critical_chance"),  # Увеличенный шанс крита
+            
+            # Оружие для Лучника
             Item("Лук охотника", ItemType.WEAPON, value=40, damage=6, 
                 description="Точный лук лесного охотника", durability=70, required_level=2,
                 character_classes=[CharacterClass.ARCHER]),
+            
             Item("Эльфийский лук", ItemType.WEAPON, value=150, damage=10,
                 description="Искусно изготовленный эльфийский лук", durability=120, required_level=8,
-                character_classes=[CharacterClass.ARCHER]),
+                character_classes=[CharacterClass.ARCHER],
+                special_effect="critical_chance"),  # Увеличенный шанс крита
+            
             Item("Арбалет снайпера", ItemType.WEAPON, value=200, damage=12,
                 description="Точный арбалет для дальних дистанций", durability=100, required_level=12,
-                character_classes=[CharacterClass.ARCHER]),
+                character_classes=[CharacterClass.ARCHER],
+                special_effect="armor_penetration"),  # Пробитие брони
+            
             Item("Короткий лук", ItemType.WEAPON, value=30, damage=4,
                 description="Компактный лук для быстрой стрельбы", durability=50, required_level=1,
                 character_classes=[CharacterClass.ARCHER]),
             
-            # Оружие для разбойника
+            # Новое оружие для Лучника
+            Item("Лук Призрака", ItemType.WEAPON, value=170, damage=11,
+                description="Лук, сделанный из призрачной древесины", 
+                durability=95, required_level=10,
+                character_classes=[CharacterClass.ARCHER],
+                special_effect="poison"),  # Ядовитые стрелы
+            
+            Item("Арбалет Разрушителя", ItemType.WEAPON, value=250, damage=14,
+                description="Мощный арбалет, пробивающий доспехи", 
+                durability=110, required_level=14,
+                character_classes=[CharacterClass.ARCHER],
+                special_effect="armor_penetration"),  # Сильное пробитие брони
+            
+            # Оружие для Разбойника
             Item("Кинжалы разбойника", ItemType.WEAPON, value=60, damage=7, 
                 description="Пара острых кинжалов", durability=60, required_level=4,
                 character_classes=[CharacterClass.ROGUE]),
+            
             Item("Теневые клинки", ItemType.WEAPON, value=140, damage=9,
                 description="Клинки, невидимые в темноте", durability=80, required_level=9,
-                character_classes=[CharacterClass.ROGUE]),
+                character_classes=[CharacterClass.ROGUE],
+                special_effect="poison"),  # Ядовитые клинки
+            
             Item("Отравленные кинжалы", ItemType.WEAPON, value=90, damage=6,
                 description="Кинжалы с ядом", durability=60, required_level=5,
-                character_classes=[CharacterClass.ROGUE]),
+                character_classes=[CharacterClass.ROGUE],
+                special_effect="poison"),  # Яд
+            
             Item("Стилет", ItemType.WEAPON, value=45, damage=5,
                 description="Тонкий кинжал для точных ударов", durability=40, required_level=2,
                 character_classes=[CharacterClass.ROGUE]),
+            
+            # Новое оружие для Разбойника
+            Item("Кинжалы Убийцы", ItemType.WEAPON, value=190, damage=11,
+                description="Клинки, созданные для бесшумных убийств", 
+                durability=75, required_level=11,
+                character_classes=[CharacterClass.ROGUE],
+                special_effect="critical_chance"),  # Высокий шанс крита
+            
+            Item("Когти Призрака", ItemType.WEAPON, value=130, damage=8,
+                description="Парные клинки, оставляющие призрачные следы", 
+                durability=65, required_level=6,
+                character_classes=[CharacterClass.ROGUE],
+                special_effect="life_steal"),  # Кража жизни
         ]
         
-        # Броня с указанием конкретных слотов И КЛАССОВ
+        # Броня с указанием конкретных слотов и классов
         armors = [
             # Броня для воина
             Item("Кожаная броня", ItemType.ARMOR, value=20, defense=3, 
                 description="Прочная кожаная броня", durability=60, required_level=1, 
                 armor_slot="armor", character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Кольчуга", ItemType.ARMOR, value=80, defense=7, 
                 description="Тяжелая, но надежная кольчуга", durability=100, required_level=4, 
                 armor_slot="armor", character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Доспех дракона", ItemType.ARMOR, value=400, defense=20, health=50, 
                 description="Доспехи из драконьей чешуи", durability=200, required_level=15, 
                 armor_slot="armor", character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Пластинчатый доспех", ItemType.ARMOR, value=120, defense=10,
                 description="Тяжелый пластинчатый доспех", durability=110, required_level=7, 
                 armor_slot="armor", character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Чешуйчатая броня", ItemType.ARMOR, value=60, defense=5,
                 description="Броня из металлических чешуек", durability=80, required_level=3,
                 armor_slot="armor", character_classes=[CharacterClass.WARRIOR]),
@@ -1030,9 +1127,11 @@ class Game:
             Item("Мантия мага", ItemType.ARMOR, value=60, defense=2, mana=30, 
                 description="Мантия, усиливающая магическую силу", durability=50, required_level=3, 
                 armor_slot="armor", character_classes=[CharacterClass.MAGE]),
+            
             Item("Роба волшебника", ItemType.ARMOR, value=100, defense=3, mana=50,
                 description="Роба, сотканная из магических нитей", durability=60, required_level=6,
                 armor_slot="armor", character_classes=[CharacterClass.MAGE]),
+            
             Item("Плащ архимага", ItemType.ARMOR, value=250, defense=5, mana=80,
                 description="Плащ древнего архимага", durability=90, required_level=12,
                 armor_slot="armor", character_classes=[CharacterClass.MAGE]),
@@ -1041,6 +1140,7 @@ class Game:
             Item("Кожаный доспех лучника", ItemType.ARMOR, value=40, defense=4,
                 description="Легкий доспех для лучников", durability=70, required_level=2,
                 armor_slot="armor", character_classes=[CharacterClass.ARCHER]),
+            
             Item("Камуфляжный плащ", ItemType.ARMOR, value=70, defense=3,
                 description="Плащ для маскировки в лесу", durability=60, required_level=4,
                 armor_slot="armor", character_classes=[CharacterClass.ARCHER]),
@@ -1049,66 +1149,80 @@ class Game:
             Item("Кожаная куртка", ItemType.ARMOR, value=35, defense=3,
                 description="Прочная кожаная куртка", durability=50, required_level=2,
                 armor_slot="armor", character_classes=[CharacterClass.ROGUE]),
+            
             Item("Теневой плащ", ItemType.ARMOR, value=90, defense=4,
                 description="Плащ, скрывающий в тенях", durability=65, required_level=5,
                 armor_slot="armor", character_classes=[CharacterClass.ROGUE]),
         ]
         
-        # Шлемы с классами
+        # Шлемы
         helmets = [
             Item("Кожаный шлем", ItemType.HELMET, value=15, defense=2,
                 description="Прочный кожаный шлем", durability=40, required_level=1,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Железный шлем", ItemType.HELMET, value=40, defense=4,
                 description="Надежный железный шлем", durability=70, required_level=3,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Магический капюшон", ItemType.HELMET, value=60, defense=1, mana=20,
                 description="Капюшон, усиливающий магию", durability=50, required_level=4,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Драконий шлем", ItemType.HELMET, value=150, defense=8, health=20,
                 description="Шлем из драконьей чешуи", durability=120, required_level=12,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Капюшон лучника", ItemType.HELMET, value=30, defense=2,
                 description="Капюшон для защиты от ветра", durability=35, required_level=2,
                 character_classes=[CharacterClass.ARCHER]),
+            
             Item("Маска разбойника", ItemType.HELMET, value=25, defense=1,
                 description="Маска, скрывающая лицо", durability=30, required_level=1,
                 character_classes=[CharacterClass.ROGUE]),
         ]
         
-        # Перчатки с классами
+        # Перчатки
         gloves = [
             Item("Кожаные перчатки", ItemType.GLOVES, value=10, defense=1,
                 description="Прочные кожаные перчатки", durability=30, required_level=1,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Железные перчатки", ItemType.GLOVES, value=30, defense=2,
                 description="Железные перчатки с усилением", durability=50, required_level=3,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Перчатки ловкости", ItemType.GLOVES, value=50, defense=1, 
                 description="Перчатки, увеличивающие ловкость", durability=40, required_level=5,
                 character_classes=[CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Магические перчатки", ItemType.GLOVES, value=40, defense=1, mana=15,
                 description="Перчатки, усиливающие магию", durability=35, required_level=4,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Перчатки стрелка", ItemType.GLOVES, value=35, defense=1,
                 description="Перчатки для точной стрельбы", durability=30, required_level=3,
                 character_classes=[CharacterClass.ARCHER]),
         ]
         
-        # Сапоги с классами
+        # Сапоги
         boots = [
             Item("Кожаные сапоги", ItemType.BOOTS, value=10, defense=1,
                 description="Прочные кожаные сапоги", durability=30, required_level=1,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE, CharacterClass.MAGE]),
+            
             Item("Железные сапоги", ItemType.BOOTS, value=30, defense=2,
                 description="Железные сапоги с защитой", durability=50, required_level=3,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Сапоги скорости", ItemType.BOOTS, value=40, defense=1,
                 description="Сапоги, увеличивающие скорость", durability=40, required_level=4,
                 character_classes=[CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Магические сапоги", ItemType.BOOTS, value=45, defense=1, mana=10,
                 description="Сапоги, усиливающие магию", durability=35, required_level=4,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Сапоги тишины", ItemType.BOOTS, value=55, defense=1,
                 description="Сапоги, позволяющие двигаться бесшумно", durability=40, required_level=6,
                 character_classes=[CharacterClass.ROGUE]),
@@ -1119,15 +1233,19 @@ class Game:
             Item("Кольцо защиты", ItemType.RING, value=80, defense=3,
                 description="Кольцо, увеличивающее защиту", required_level=3,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Кольцо маны", ItemType.RING, value=70, mana=20,
                 description="Кольцо, увеличивающее ману", required_level=3,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Кольцо силы", ItemType.RING, value=90, damage=2,
                 description="Кольцо, увеличивающее силу", required_level=4,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Кольцо ловкости", ItemType.RING, value=85,
                 description="Кольцо, увеличивающее ловкость", required_level=4,
                 character_classes=[CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Кольцо здоровья", ItemType.RING, value=60, health=20,
                 description="Кольцо, увеличивающее здоровье", required_level=2,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE, CharacterClass.MAGE]),
@@ -1138,46 +1256,52 @@ class Game:
             Item("Амулет защиты", ItemType.AMULET, value=100, defense=5,
                 description="Амулет, увеличивающий защиту", required_level=5,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Амулет магии", ItemType.AMULET, value=120, mana=30,
                 description="Амулет, усиливающий магию", required_level=6,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Амулет силы", ItemType.AMULET, value=110, damage=3,
                 description="Амулет, увеличивающий силу", required_level=6,
                 character_classes=[CharacterClass.WARRIOR]),
+            
             Item("Амулет удачи", ItemType.AMULET, value=95,
                 description="Амулет, увеличивающий удачу", required_level=4,
                 character_classes=[CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Амулет жизни", ItemType.AMULET, value=130, health=30,
-                description="Амулет, увеличивающий здоровье", required_level=7,
+                description="Амулет, увеличивающее здоровье", required_level=7,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER, CharacterClass.ROGUE, CharacterClass.MAGE]),
         ]
         
-        # Зелья (доступны всем)
+        # Зелья
         potions = [
             Item("Зелье здоровья", ItemType.POTION, value=20, health=50, 
-                description="Восстанавливает здоровье", required_level=1,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Восстанавливает здоровье", required_level=1),
+            
             Item("Зелье маны", ItemType.POTION, value=25, mana=30, 
-                description="Восстанавливает ману", required_level=1,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Восстанавливает ману", required_level=1),
+            
             Item("Сильное зелье здоровья", ItemType.POTION, value=50, health=100, 
-                description="Сильно восстанавливает здоровье", required_level=3,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Сильно восстанавливает здоровье", required_level=3),
+            
             Item("Эликсир опыта", ItemType.POTION, value=100, 
-                description="Дает 100 опыта", required_level=5,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Дает 100 опыта", required_level=5),
+            
             Item("Зелье силы", ItemType.POTION, value=40, 
                 description="Увеличивает силу на 5 на 10 минут", required_level=4,
                 character_classes=[CharacterClass.WARRIOR, CharacterClass.ARCHER]),
+            
             Item("Антидот", ItemType.POTION, value=30, 
-                description="Лечит от яда", required_level=2,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Лечит от яда", required_level=2),
+            
             Item("Эликсир удачи", ItemType.POTION, value=60,
-                description="Увеличивает удачу на 3 на 1 час", required_level=6,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Увеличивает удачу на 3 на 1 час", required_level=6),
+            
             Item("Зелье ловкости", ItemType.POTION, value=45,
                 description="Увеличивает ловкость на 5 на 10 минут", required_level=4,
                 character_classes=[CharacterClass.ARCHER, CharacterClass.ROGUE]),
+            
             Item("Зелье интеллекта", ItemType.POTION, value=55,
                 description="Увеличивает интеллект на 5 на 10 минут", required_level=4,
                 character_classes=[CharacterClass.MAGE]),
@@ -1186,30 +1310,30 @@ class Game:
         # Свитки
         scrolls = [
             Item("Свиток телепортации", ItemType.SCROLL, value=100,
-                description="Телепортирует в Стартовую деревню", required_level=1,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Телепортирует в Стартовую деревню", required_level=1),
+            
             Item("Свиток идентификации", ItemType.SCROLL, value=80,
-                description="Позволяет идентифицировать предметы", required_level=3,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Позволяет идентифицировать предметы", required_level=3),
+            
             Item("Свиток воскрешения", ItemType.SCROLL, value=500,
-                description="Воскрешает павшего союзника", required_level=10,
-                character_classes=[CharacterClass.WARRIOR, CharacterClass.MAGE, CharacterClass.ARCHER, CharacterClass.ROGUE]),
+                description="Воскрешает павшего союзника", required_level=10),
+            
             Item("Свиток щита", ItemType.SCROLL, value=120,
                 description="Создает магический щит", required_level=4,
                 character_classes=[CharacterClass.MAGE]),
+            
             Item("Свиток огня", ItemType.SCROLL, value=150,
                 description="Вызывает огненный шар", required_level=5,
                 character_classes=[CharacterClass.MAGE]),
         ]
         
-        # Собираем все предметы
+        # Собираем все предметы в базу данных
         all_items = weapons + armors + helmets + gloves + boots + rings + amulets + potions + scrolls
         for item in all_items:
             self.items_db[item.name] = item
     
     def initialize_quests(self):
-        """Инициализация квестов с улучшениями"""
-        # Основной сюжетный квест
+        """Инициализация квестов"""
         main_quest = Quest(
             "Угроза дракона",
             "Древний дракон пробудился и угрожает королевству. Победите его!",
@@ -1221,7 +1345,6 @@ class Game:
         main_quest.add_reward_item(self.items_db["Доспех дракона"].copy())
         self.quests_db[main_quest.id] = main_quest
         
-        # Побочные квесты
         quest1 = Quest(
             "Очистить лес",
             "Темный лес кишит волками. Убейте 5 волков.",
@@ -1262,7 +1385,6 @@ class Game:
         quest4.add_reward_item(self.items_db["Антидот"].copy())
         self.quests_db[quest4.id] = quest4
         
-        # Квест для борделя
         quest5 = Quest(
             "Особое поручение",
             "Навестите бордель и получите особую услугу.",
@@ -1273,12 +1395,13 @@ class Game:
         quest5.add_reward_item(self.items_db["Зелье здоровья"].copy())
         self.quests_db[quest5.id] = quest5
     
+    # ОПТИМИЗАЦИЯ: создадим общие методы для вывода
     def clear_screen(self):
         """Очистка экрана"""
         os.system('cls' if os.name == 'nt' else 'clear')
     
     def print_header(self, title: str):
-        """Вывод заголовка с улучшениями"""
+        """Вывод заголовка"""
         print(f"{Color.CYAN}{'='*70}{Color.END}")
         print(f"{Color.BOLD}{Color.YELLOW}{title:^70}{Color.END}")
         print(f"{Color.CYAN}{'='*70}{Color.END}")
@@ -1290,12 +1413,11 @@ class Game:
         print(f"{Color.CYAN}{'-'*70}{Color.END}")
     
     def get_choice(self, min_choice: int, max_choice: int) -> int:
-        """Получение выбора от пользователя с улучшениями"""
+        """Получение выбора от пользователя"""
         while True:
             try:
                 choice = input(f"{Color.WHITE}Ваш выбор ({min_choice}-{max_choice}): {Color.END}")
                 
-                # Проверка на команды выхода
                 if choice.lower() in ['выход', 'exit', 'quit']:
                     confirm = input("Вы уверены, что хотите выйти? (y/n): ")
                     if confirm.lower() == 'y':
@@ -1312,11 +1434,10 @@ class Game:
                 print(f"{Color.RED}Пожалуйста, введите число{Color.END}")
     
     def create_character(self):
-        """Создание персонажа с улучшениями - ИСПРАВЛЕНО ДЛЯ МАГА"""
+        """Создание персонажа"""
         self.clear_screen()
         self.print_header("СОЗДАНИЕ ПЕРСОНАЖА")
         
-        # Выбор сложности
         print(f"{Color.YELLOW}Выберите сложность игры:{Color.END}")
         print("1. Легкий - для новичков (бониус к здоровью и урону)")
         print("2. Нормальный - стандартный опыт")
@@ -1332,7 +1453,6 @@ class Game:
         }
         self.difficulty = difficulty_map[diff_choice]
         
-        # Имя персонажа
         print(f"\n{Color.WHITE}Введите имя вашего персонажа (3-15 символов):{Color.END}")
         name = input("> ").strip()
         while not (3 <= len(name) <= 15):
@@ -1341,7 +1461,6 @@ class Game:
         
         self.player = Player(name, self.difficulty)
         
-        # Выбор класса
         self.clear_screen()
         self.print_header("ВЫБОР КЛАССА")
         
@@ -1371,7 +1490,6 @@ class Game:
         
         self.player.set_class(class_map[class_choice])
         
-        # Начальные предметы
         starter_items = {
             CharacterClass.WARRIOR: ["Деревянный меч", "Кожаная броня", "Кожаный шлем", "Кожаные перчатки", "Кожаные сапоги"],
             CharacterClass.MAGE: ["Магический посох", "Мантия мага", "Магический капюшон", "Кожаные перчатки", "Кожаные сапоги"],
@@ -1379,7 +1497,6 @@ class Game:
             CharacterClass.ROGUE: ["Кинжалы разбойника", "Кожаная броня", "Кожаный шлем", "Кожаные перчатки", "Кожаные сапоги"]
         }
         
-        # Добавляем зелья для всех классов
         starter_potions = ["Зелье здоровья", "Зелье здоровья", "Зелье маны"]
         
         for item_name in starter_items.get(self.player.character_class, []):
@@ -1390,8 +1507,7 @@ class Game:
             if potion_name in self.items_db:
                 self.player.add_item(self.items_db[potion_name].copy())
         
-        # Автоматическая экипировка стартовых предметов
-        for item in self.player.inventory[:]:  # Используем копию списка для безопасной итерации
+        for item in self.player.inventory[:]:
             if item.item_type == ItemType.WEAPON:
                 self.player.equip_item(item)
             elif item.item_type in [ItemType.ARMOR, ItemType.HELMET, ItemType.GLOVES, ItemType.BOOTS]:
@@ -1408,103 +1524,22 @@ class Game:
         print(f"Золото: {Color.YELLOW}{self.player.gold}{Color.END}")
         
         print(f"\n{Color.BOLD}ХАРАКТЕРИСТИКИ:{Color.END}")
+        stat_names = {
+            "strength": "Сила",
+            "dexterity": "Ловкость",
+            "intelligence": "Интеллект",
+            "constitution": "Телосложение",
+            "luck": "Удача"
+        }
         for stat, value in self.player.stats.items():
-            stat_name = {
-                "strength": "Сила",
-                "dexterity": "Ловкость",
-                "intelligence": "Интеллект",
-                "constitution": "Телосложение",
-                "luck": "Удача"
-            }.get(stat, stat)
-            print(f"  {stat_name}: {value}")
+            print(f"  {stat_names.get(stat, stat)}: {value}")
         
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы начать приключение...{Color.END}")
     
-    def show_status(self):
-        """Показать статус персонажа с улучшениями"""
-        self.clear_screen()
-        self.print_header("СТАТУС ПЕРСОНАЖА")
-        
-        # Основная информация
-        print(f"Имя: {Color.YELLOW}{self.player.name}{Color.END}")
-        print(f"Класс: {Color.CYAN}{self.player.character_class.value}{Color.END}")
-        print(f"Сложность: {Color.PURPLE}{self.player.difficulty.value}{Color.END}")
-        print(f"Уровень: {Color.GREEN}{self.player.level}{Color.END}")
-        print(f"Опыт: {self.player.xp}/{self.player.xp_to_next_level}")
-        
-        health_bar = self.create_health_bar(self.player.health, self.player.max_health, 25)
-        mana_bar = self.create_health_bar(self.player.mana, self.player.max_mana, 25)
-        mana_bar = mana_bar.replace(Color.GREEN, Color.BLUE).replace(Color.RED, Color.PURPLE)
-        
-        print(f"Здоровье: {health_bar}")
-        print(f"Мана:     {mana_bar}")
-        print(f"Золото: {Color.YELLOW}{self.player.gold}{Color.END}")
-        
-        # Статистика
-        print(f"\n{Color.BOLD}ХАРАКТЕРИСТИКИ:{Color.END}")
-        for stat, value in self.player.stats.items():
-            stat_name = {
-                "strength": "Сила",
-                "dexterity": "Ловкость",
-                "intelligence": "Интеллект",
-                "constitution": "Телосложение",
-                "luck": "Удача"
-            }.get(stat, stat)
-            bonus = self.player.get_stat_bonus(stat)
-            print(f"  {stat_name}: {value} (бонус: +{bonus})")
-        
-        # Экипировка
-        print(f"\n{Color.BOLD}ЭКИПИРОВКА:{Color.END}")
-        for slot, item in self.player.equipped.items():
-            slot_name = {
-                "weapon": "Оружие",
-                "armor": "Броня",
-                "helmet": "Шлем",
-                "gloves": "Перчатки",
-                "boots": "Сапоги",
-                "ring": "Кольцо",
-                "amulet": "Амулет"
-            }.get(slot, slot)
-            
-            if item:
-                print(f"  {slot_name}: {item.get_colored_name()}")
-                if item.durability < item.max_durability * 0.3:
-                    print(f"    {Color.RED}Внимание: низкая прочность!{Color.END}")
-            else:
-                print(f"  {slot_name}: {Color.WHITE}Нет{Color.END}")
-        
-        # Статистика убийств
-        if self.player.killed_enemies:
-            print(f"\n{Color.BOLD}УБИТО ВРАГОВ:{Color.END}")
-            total_killed = sum(self.player.killed_enemies.values())
-            print(f"  Всего: {total_killed}")
-            
-            for enemy_type, count in sorted(self.player.killed_enemies.items(), 
-                                          key=lambda x: x[1], reverse=True)[:5]:
-                print(f"  {enemy_type}: {count}")
-        
-        # Время игры
-        if self.game_start_time:
-            play_time = datetime.now() - self.game_start_time
-            hours = play_time.seconds // 3600
-            minutes = (play_time.seconds % 3600) // 60
-            seconds = play_time.seconds % 60
-            print(f"\nВремя игры: {hours}ч {minutes}м {seconds}с")
-        
-        # Достижения
-        completed_achievements = [a for a in self.player.achievements if a.completed]
-        if completed_achievements:
-            print(f"\n{Color.BOLD}ДОСТИЖЕНИЯ ({len(completed_achievements)}/{len(self.player.achievements)}):{Color.END}")
-            for i, achievement in enumerate(completed_achievements[:3], 1):
-                print(f"  {i}. {achievement.name} - {achievement.description}")
-            
-            if len(completed_achievements) > 3:
-                print(f"  ... и еще {len(completed_achievements) - 3}")
-        
-        input(f"\n{Color.WHITE}Нажмите Enter, чтобы вернуться...{Color.END}")
-    
-    def create_health_bar(self, current: int, maximum: int, length: int = 20) -> str:
-        """Создание полоски здоровья с улучшениями"""
+    # ОПТИМИЗАЦИЯ: унифицированный метод для создания полосок
+    def create_bar(self, current: int, maximum: int, length: int = 20, color_good: str = Color.GREEN, 
+                  color_medium: str = Color.YELLOW, color_bad: str = Color.RED) -> str:
+        """Создание полоски с улучшениями"""
         if maximum <= 0:
             return f"[{'█' * length}] 0/0"
         
@@ -1516,19 +1551,108 @@ class Game:
             
         empty = length - filled
         
-        # Цвет в зависимости от процента здоровья
         percent = (current / maximum) * 100
         if percent > 70:
-            color = Color.GREEN
+            color = color_good
         elif percent > 30:
-            color = Color.YELLOW
+            color = color_medium
         else:
-            color = Color.RED
+            color = color_bad
             
-        return f"[{color}{'█' * filled}{Color.RED}{'█' * empty}{Color.END}] {current}/{maximum}"
+        return f"[{color}{'█' * filled}{color_bad}{'█' * empty}{Color.END}] {current}/{maximum}"
+    
+    def show_status(self):
+        """Показать статус персонажа"""
+        self.clear_screen()
+        self.print_header("СТАТУС ПЕРСОНАЖА")
+        
+        print(f"Имя: {Color.YELLOW}{self.player.name}{Color.END}")
+        print(f"Класс: {Color.CYAN}{self.player.character_class.value}{Color.END}")
+        print(f"Сложность: {Color.PURPLE}{self.player.difficulty.value}{Color.END}")
+        print(f"Уровень: {Color.GREEN}{self.player.level}{Color.END}")
+        print(f"Опыт: {self.player.xp}/{self.player.xp_to_next_level}")
+        
+        health_bar = self.create_bar(self.player.health, self.player.max_health, 25)
+        mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 25, Color.BLUE, Color.PURPLE, Color.PURPLE)
+        
+        print(f"Здоровье: {health_bar}")
+        print(f"Мана:     {mana_bar}")
+        print(f"Золото: {Color.YELLOW}{self.player.gold}{Color.END}")
+        
+        print(f"\n{Color.BOLD}ХАРАКТЕРИСТИКИ:{Color.END}")
+        stat_names = {
+            "strength": "Сила",
+            "dexterity": "Ловкость",
+            "intelligence": "Интеллект",
+            "constitution": "Телосложение",
+            "luck": "Удача"
+        }
+        for stat, value in self.player.stats.items():
+            bonus = self.player.get_stat_bonus(stat)
+            print(f"  {stat_names.get(stat, stat)}: {value} (бонус: +{bonus})")
+        
+        print(f"\n{Color.BOLD}ЭКИПИРОВКА:{Color.END}")
+        slot_names = {
+            "weapon": "Оружие",
+            "armor": "Броня",
+            "helmet": "Шлем",
+            "gloves": "Перчатки",
+            "boots": "Сапоги",
+            "ring": "Кольцо",
+            "amulet": "Амулет"
+        }
+        
+        for slot, item in self.player.equipped.items():
+            slot_name = slot_names.get(slot, slot)
+            if item:
+                print(f"  {slot_name}: {item.get_colored_name()}")
+                if item.durability < item.max_durability * 0.3:
+                    print(f"    {Color.RED}Внимание: низкая прочность!{Color.END}")
+                # Показываем специальный эффект оружия
+                if slot == "weapon" and item.special_effect:
+                    effect_names = {
+                        "fire_damage": "Огненный урон",
+                        "mana_steal": "Кража маны",
+                        "critical_chance": "Шанс крита",
+                        "poison": "Яд",
+                        "life_steal": "Кража здоровья",
+                        "stun_chance": "Оглушение",
+                        "armor_penetration": "Пробитие брони"
+                    }
+                    effect_name = effect_names.get(item.special_effect, item.special_effect)
+                    print(f"    {Color.CYAN}Эффект: {effect_name}{Color.END}")
+            else:
+                print(f"  {slot_name}: {Color.WHITE}Нет{Color.END}")
+        
+        if self.player.killed_enemies:
+            print(f"\n{Color.BOLD}УБИТО ВРАГОВ:{Color.END}")
+            total_killed = sum(self.player.killed_enemies.values())
+            print(f"  Всего: {total_killed}")
+            
+            for enemy_type, count in sorted(self.player.killed_enemies.items(), 
+                                          key=lambda x: x[1], reverse=True)[:5]:
+                print(f"  {enemy_type}: {count}")
+        
+        if self.game_start_time:
+            play_time = datetime.now() - self.game_start_time
+            hours = play_time.seconds // 3600
+            minutes = (play_time.seconds % 3600) // 60
+            seconds = play_time.seconds % 60
+            print(f"\nВремя игры: {hours}ч {minutes}м {seconds}с")
+        
+        completed_achievements = [a for a in self.player.achievements if a.completed]
+        if completed_achievements:
+            print(f"\n{Color.BOLD}ДОСТИЖЕНИЯ ({len(completed_achievements)}/{len(self.player.achievements)}):{Color.END}")
+            for i, achievement in enumerate(completed_achievements[:3], 1):
+                print(f"  {i}. {achievement.name} - {achievement.description}")
+            
+            if len(completed_achievements) > 3:
+                print(f"  ... и еще {len(completed_achievements) - 3}")
+        
+        input(f"\n{Color.WHITE}Нажмите Enter, чтобы вернуться...{Color.END}")
     
     def show_inventory(self):
-        """Показать инвентарь с улучшениями"""
+        """Показать инвентарь"""
         while True:
             self.clear_screen()
             self.print_header("ИНВЕНТАРЬ")
@@ -1539,14 +1663,12 @@ class Game:
             if not self.player.inventory:
                 print(f"\n{Color.YELLOW}Инвентарь пуст{Color.END}")
             else:
-                # Группировка предметов по типам
                 items_by_type = {}
                 for item in self.player.inventory:
                     if item.item_type not in items_by_type:
                         items_by_type[item.item_type] = []
                     items_by_type[item.item_type].append(item)
                 
-                # Вывод предметов
                 item_index = 1
                 item_map = {}
                 
@@ -1570,6 +1692,20 @@ class Game:
                         if stats:
                             print(f"     {', '.join(stats)}")
                         
+                        # Показываем специальный эффект для оружия
+                        if item.special_effect:
+                            effect_names = {
+                                "fire_damage": "Огненный урон",
+                                "mana_steal": "Кража маны",
+                                "critical_chance": "Шанс крита",
+                                "poison": "Яд",
+                                "life_steal": "Кража здоровья",
+                                "stun_chance": "Оглушение",
+                                "armor_penetration": "Пробитие брони"
+                            }
+                            effect_name = effect_names.get(item.special_effect, item.special_effect)
+                            print(f"     {Color.CYAN}Эффект: {effect_name}{Color.END}")
+                        
                         print(f"     Цена: {item.value} золота")
                         item_map[item_index] = item
                         item_index += 1
@@ -1589,7 +1725,7 @@ class Game:
             
             choice = self.get_choice(1, 6)
             
-            if choice == 1:  # Использовать предмет
+            if choice == 1:
                 if not self.player.inventory:
                     print(f"{Color.RED}Нет предметов для использования{Color.END}")
                     time.sleep(1)
@@ -1598,7 +1734,6 @@ class Game:
                 print(f"\n{Color.WHITE}Выберите предмет для использования:{Color.END}")
                 item_choice = self.get_choice(1, len(self.player.inventory))
                 
-                # Получаем предмет по индексу
                 item = None
                 current_index = 1
                 for inv_item in self.player.inventory:
@@ -1610,13 +1745,12 @@ class Game:
                 if item:
                     self.use_item(item)
             
-            elif choice == 2:  # Экипировать предмет
+            elif choice == 2:
                 if not self.player.inventory:
                     print(f"{Color.RED}Нет предметов для экипировки{Color.END}")
                     time.sleep(1)
                     continue
                 
-                # Показать только экипируемые предметы
                 equippable_items = [item for item in self.player.inventory 
                                   if item.item_type in [ItemType.WEAPON, ItemType.ARMOR, 
                                                        ItemType.HELMET, ItemType.GLOVES, 
@@ -1638,11 +1772,25 @@ class Game:
                 if item:
                     if self.player.equip_item(item):
                         print(f"{Color.GREEN}Предмет экипирован!{Color.END}")
+                        # Показываем эффект оружия
+                        if item.item_type == ItemType.WEAPON and item.special_effect:
+                            effect_names = {
+                                "fire_damage": "Это оружие наносит дополнительный огненный урон!",
+                                "mana_steal": "Это оружие крадет ману у врагов!",
+                                "critical_chance": "Это оружие увеличивает шанс критического удара!",
+                                "poison": "Это оружие отравляет врагов!",
+                                "life_steal": "Это оружие крадет здоровье у врагов!",
+                                "stun_chance": "Это оружие может оглушить врага!",
+                                "armor_penetration": "Это оружие пробивает броню врагов!"
+                            }
+                            effect_desc = effect_names.get(item.special_effect, "")
+                            if effect_desc:
+                                print(f"{Color.CYAN}{effect_desc}{Color.END}")
                     else:
                         print(f"{Color.RED}Не удалось экипировать предмет{Color.END}")
-                    time.sleep(1)
+                    time.sleep(2)
             
-            elif choice == 3:  # Снять экипировку
+            elif choice == 3:
                 equipped_items = [(slot, item) for slot, item in self.player.equipped.items() 
                                 if item is not None]
                 
@@ -1671,7 +1819,7 @@ class Game:
                     print(f"{Color.GREEN}Предмет снят!{Color.END}")
                 time.sleep(1)
             
-            elif choice == 4:  # Выбросить предмет
+            elif choice == 4:
                 if not self.player.inventory:
                     print(f"{Color.RED}Нет предметов для удаления{Color.END}")
                     time.sleep(1)
@@ -1680,7 +1828,6 @@ class Game:
                 print(f"\n{Color.WHITE}Выберите предмет для удаления:{Color.END}")
                 item_choice = self.get_choice(1, len(self.player.inventory))
                 
-                # Получаем предмет по индексу
                 item = None
                 current_index = 1
                 for inv_item in self.player.inventory:
@@ -1700,17 +1847,16 @@ class Game:
                         print(f"{Color.YELLOW}Предмет выброшен{Color.END}")
                         time.sleep(1)
             
-            elif choice == 5:  # Отсортировать инвентарь
+            elif choice == 5:
                 self.sort_inventory()
                 print(f"{Color.GREEN}Инвентарь отсортирован!{Color.END}")
                 time.sleep(1)
             
-            elif choice == 6:  # Вернуться
+            elif choice == 6:
                 break
     
     def sort_inventory(self):
         """Сортировка инвентаря"""
-        # Сортировка по типу, затем по редкости, затем по имени
         self.player.inventory.sort(key=lambda x: (
             x.item_type.value,
             {"Обычный": 0, "Необычный": 1, "Редкий": 2, "Эпический": 3, "Легендарный": 4}.get(x.rarity, 0),
@@ -1718,7 +1864,7 @@ class Game:
         ))
     
     def use_item(self, item: Item):
-        """Использовать предмет с улучшениями"""
+        """Использовать предмет"""
         if item.item_type == ItemType.POTION:
             if item.health > 0:
                 old_health = self.player.health
@@ -1736,7 +1882,6 @@ class Game:
                 self.player.gain_xp(100)
                 print(f"{Color.YELLOW}Вы получили 100 опыта!{Color.END}")
             
-            # Эффекты специальных зелий
             if item.name == "Зелье силы":
                 self.player.stats["strength"] += 5
                 print(f"{Color.GREEN}Ваша сила увеличена на 5 на 10 минут!{Color.END}")
@@ -1744,6 +1889,14 @@ class Game:
             elif item.name == "Эликсир удачи":
                 self.player.stats["luck"] += 3
                 print(f"{Color.GREEN}Ваша удача увеличена на 3 на 1 час!{Color.END}")
+            
+            elif item.name == "Зелье ловкости":
+                self.player.stats["dexterity"] += 5
+                print(f"{Color.GREEN}Ваша ловкость увеличена на 5 на 10 минут!{Color.END}")
+            
+            elif item.name == "Зелье интеллекта":
+                self.player.stats["intelligence"] += 5
+                print(f"{Color.GREEN}Ваш интеллект увеличена на 5 на 10 минут!{Color.END}")
             
             self.player.remove_item(item)
         
@@ -1753,7 +1906,6 @@ class Game:
                 print(f"{Color.YELLOW}Вы телепортируетесь в Стартовую деревню!{Color.END}")
             elif item.name == "Свиток идентификации":
                 print(f"{Color.YELLOW}Вы использовали свиток идентификации.{Color.END}")
-                # Здесь можно добавить логику идентификации
             elif item.name == "Свиток воскрешения":
                 print(f"{Color.YELLOW}Свиток воскрешения можно использовать только в бою.{Color.END}")
             
@@ -1765,7 +1917,7 @@ class Game:
         time.sleep(2)
     
     def show_quests(self):
-        """Показать квесты с улучшениями"""
+        """Показать квесты"""
         self.clear_screen()
         self.print_header("КВЕСТЫ")
         
@@ -1773,7 +1925,6 @@ class Game:
             print(f"{Color.YELLOW}У вас нет активных квестов{Color.END}")
             print("Посетите таверну или поговорите с жителями, чтобы получить квесты.")
         else:
-            # Разделение квестов по типам
             main_quests = [q for q in self.player.quests if q.quest_type == "main"]
             side_quests = [q for q in self.player.quests if q.quest_type == "side"]
             daily_quests = [q for q in self.player.quests if q.quest_type == "daily"]
@@ -1831,8 +1982,9 @@ class Game:
                 completion = "✓" if obj in quest.completed_objectives else " "
                 print(f"  [{completion}] {obj}: {progress}/{target}")
     
+    # ОПТИМИЗАЦИЯ: объединение методов исследования
     def explore_location(self, location: Location):
-        """Исследование локации с улучшениями"""
+        """Исследование локации"""
         while True:
             self.clear_screen()
             self.print_header(f"ИССЛЕДОВАНИЕ: {location.name}")
@@ -1841,31 +1993,32 @@ class Game:
             print(f"\nТип: {location.type.value}")
             print(f"Уровень сложности: {location.level_range[0]}-{location.level_range[1]}")
             
-            # Статус локации
+            # ИСПРАВЛЕНИЕ: показываем реальное количество врагов
             if location.cleared:
                 print(f"{Color.GREEN}✓ Локация очищена{Color.END}")
             elif not location.enemies:
                 print(f"{Color.YELLOW}○ Врагов нет{Color.END}")
             
-            # Проверка на врагов
             if location.enemies:
                 print(f"\n{Color.RED}Вы обнаружили врагов:{Color.END}")
-                for i, enemy in enumerate(location.enemies[:5], 1):
+                # Показываем до 7 врагов (было 5)
+                for i, enemy in enumerate(location.enemies[:7], 1):
                     health_percent = (enemy.health / enemy.max_health) * 100
                     health_color = Color.GREEN if health_percent > 50 else Color.YELLOW if health_percent > 20 else Color.RED
                     print(f"  {i}. {enemy.name} ({health_color}❤ {enemy.health}/{enemy.max_health}{Color.END})")
                 
-                if len(location.enemies) > 5:
-                    print(f"  ... и еще {len(location.enemies) - 5} врагов")
+                # Показываем сколько всего врагов
+                if len(location.enemies) > 7:
+                    print(f"  ... и еще {len(location.enemies) - 7} врагов")
+                else:
+                    print(f"  Всего врагов: {len(location.enemies)}")
             
-            # Специальные события
             if random.random() < location.special_event_chance:
                 event = location.add_special_event()
                 print(f"\n{Color.PURPLE}✨ {event}{Color.END}")
             
             print(f"\n{Color.CYAN}{'-'*70}{Color.END}")
             
-            # Меню действий
             options = []
             option_map = {}
             option_index = 1
@@ -1912,18 +2065,17 @@ class Game:
             
             choice = self.get_choice(1, len(options))
             
-            if choice < len(options):  # Все опции кроме "Вернуться"
+            if choice < len(options):
                 _, func, args = option_map[choice]
                 if func:
                     func(*args)
-                    # Проверка, не умер ли игрок
                     if self.player and self.player.health <= 0:
                         return
             else:
                 break
     
     def explore_further(self, location: Location):
-        """Дальнейшее исследование локации с улучшениями"""
+        """Дальнейшее исследование локации"""
         self.clear_screen()
         self.print_header(f"ГЛУБЖЕ В {location.name}")
         
@@ -1943,19 +2095,16 @@ class Game:
         event = random.choice(events)
         print(f"{Color.YELLOW}{event}{Color.END}")
         
-        # Шанс найти что-то полезное зависит от удачи
         luck_bonus = self.player.get_stat_bonus("luck") * 0.05
         find_chance = 0.4 + luck_bonus
         
         if random.random() < find_chance:
             found_items = []
             
-            # Золото
             gold_found = random.randint(5, 50) + (self.player.level * 2)
             self.player.gold += gold_found
             found_items.append(f"{Color.YELLOW}{gold_found} золота{Color.END}")
             
-            # Шанс найти предмет
             if random.random() < 0.3:
                 available_items = [item for item in self.items_db.values() 
                                   if item.value <= 100 + (self.player.level * 20)]
@@ -1967,33 +2116,29 @@ class Game:
             if found_items:
                 print(f"{Color.GREEN}Вы нашли: {', '.join(found_items)}!{Color.END}")
         
-        # Шанс встретить врага
         encounter_chance = 0.3 - (self.player.get_stat_bonus("dexterity") * 0.02)
         if random.random() < encounter_chance and location.enemies:
             print(f"\n{Color.RED}Вас атаковал враг!{Color.END}")
             time.sleep(1)
             self.start_battle(location)
         else:
-            # Шанс найти подсказку или подсказку для квеста
             if random.random() < 0.2 and self.player.quests:
                 print(f"\n{Color.CYAN}Вы нашли подсказку, связанную с одним из ваших квестов!{Color.END}")
             
             input(f"\n{Color.WHITE}Нажмите Enter, чтобы продолжить...{Color.END}")
     
     def search_treasure(self, location: Location):
-        """Поиск сокровищ с улучшениями"""
+        """Поиск сокровищ"""
         self.clear_screen()
         self.print_header("ПОИСК СОКРОВИЩ")
         
         print(f"{Color.YELLOW}Вы тщательно обыскиваете местность...{Color.END}")
         time.sleep(1)
         
-        # Бонус от ловкости и удачи
         dexterity_bonus = self.player.get_stat_bonus("dexterity") * 0.03
         luck_bonus = self.player.get_stat_bonus("luck") * 0.05
         success_chance = 0.5 + dexterity_bonus + luck_bonus
         
-        # Штраф за сложность
         difficulty_penalty = {
             Difficulty.EASY: 0.1,
             Difficulty.NORMAL: 0,
@@ -2004,7 +2149,6 @@ class Game:
         success_chance += difficulty_penalty
         
         if random.random() < success_chance:
-            # Найдено сокровище
             treasures = [
                 ("небольшой сундук с золотом", "gold", (20, 50)),
                 ("магический артефакт", "item", None),
@@ -2022,15 +2166,12 @@ class Game:
             
             if treasure_type == "gold":
                 gold = random.randint(gold_range[0], gold_range[1])
-                gold += self.player.level * 5  # Бонус за уровень
+                gold += self.player.level * 5
                 self.player.gold += gold
                 print(f"{Color.YELLOW}+{gold} золота{Color.END}")
-                
-                # Проверка достижения
                 self.player.check_achievement("collect_gold", gold)
             
             elif treasure_type == "item":
-                # Случайный предмет с учетом уровня игрока
                 available_items = [item for item in self.items_db.values() 
                                   if item.value <= 100 + (self.player.level * 20)]
                 if available_items:
@@ -2047,7 +2188,6 @@ class Game:
                     print(f"{Color.BLUE}Вы нашли: {scroll.get_colored_name()}{Color.END}")
             
             elif treasure_type == "enchanted_item":
-                # Зачарованный предмет с улучшенными характеристиками
                 available_items = [item for item in self.items_db.values() 
                                   if item.item_type in [ItemType.WEAPON, ItemType.ARMOR, 
                                                        ItemType.HELMET, ItemType.GLOVES, ItemType.BOOTS]
@@ -2071,7 +2211,6 @@ class Game:
                 self.player.add_item(resource_item)
                 print(f"{Color.GREEN}Вы нашли: {resource}{Color.END}")
         else:
-            # Неудача
             failures = [
                 "Вы наткнулись на ловушку и получили урон!",
                 "Вы ничего не нашли",
@@ -2119,12 +2258,10 @@ class Game:
         print(f"{Color.YELLOW}{name}:{Color.END}")
         print(f'"{dialogue}"')
         
-        # Шанс получить полезную информацию или квест
         if random.random() < 0.3:
             print(f"\n{Color.GREEN}{name} дает вам полезный совет!{Color.END}")
             
             if random.random() < 0.5:
-                # Совет по игре
                 tips = [
                     "Не забывайте использовать зелья в бою",
                     "Исследуйте каждую локацию тщательно",
@@ -2134,7 +2271,6 @@ class Game:
                 ]
                 print(f"Совет: {random.choice(tips)}")
             else:
-                # Информация о врагах
                 enemy_info = [
                     "Гоблины слабы, но атакуют толпой",
                     "Волки быстры, но имеют мало здоровья",
@@ -2146,8 +2282,9 @@ class Game:
         
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы продолжить...{Color.END}")
     
+    # ОПТИМИЗАЦИЯ: упрощенный метод для магазина
     def visit_shop(self):
-        """Посещение магазина с улучшениями - С ФИЛЬТРАЦИЕЙ ПО КЛАССУ И УРОВНЮ"""
+        """Посещение магазина"""
         while True:
             self.clear_screen()
             self.print_header("МАГАЗИН 'ВСЕ ДЛЯ ПРИКЛЮЧЕНИЙ'")
@@ -2157,47 +2294,37 @@ class Game:
             print(f"Ваш класс: {Color.CYAN}{self.player.character_class.value}{Color.END}")
             print(f"Ваш уровень: {Color.GREEN}{self.player.level}{Color.END}")
             
-            # Получаем текущую локацию
             current_location = self.game_world.get(self.player.location)
             location_min_level = current_location.level_range[0] if current_location else 1
             
-            # Определяем доступные уровни предметов (уровень игрока ±2, но не ниже уровня локации)
             min_item_level = max(1, min(self.player.level - 2, location_min_level))
             max_item_level = self.player.level + 2
             
             print(f"Доступные уровни предметов: {min_item_level}-{max_item_level}")
             
-            # Фильтруем товары: подходят по классу, уровню и уровню локации
             shop_items = []
             for item in self.items_db.values():
-                # Проверяем, подходит ли предмет по классу
                 if hasattr(item, 'character_classes') and item.character_classes:
                     if self.player.character_class not in item.character_classes:
                         continue
                 
-                # Проверяем уровень предмета
                 if item.required_level < min_item_level or item.required_level > max_item_level:
                     continue
                 
-                # Проверяем стоимость (не слишком дорого)
                 if item.value <= 100 + (self.player.level * 20):
                     shop_items.append(item.copy())
             
-            # Сортируем предметы по типу и уровню
             shop_items.sort(key=lambda x: (x.item_type.value, x.required_level, x.value))
             
-            # Группируем предметы по типам для удобного отображения
             items_by_type = {}
             for item in shop_items:
                 if item.item_type not in items_by_type:
                     items_by_type[item.item_type] = []
                 items_by_type[item.item_type].append(item)
             
-            # Выводим товары по категориям
             item_index = 1
             item_map = {}
             
-            # Определяем порядок вывода категорий
             type_order = [
                 ItemType.WEAPON, ItemType.ARMOR, ItemType.HELMET,
                 ItemType.GLOVES, ItemType.BOOTS, ItemType.RING,
@@ -2209,21 +2336,18 @@ class Game:
                     print(f"\n{Color.BOLD}{item_type.value}:{Color.END}")
                     
                     for item in items_by_type[item_type]:
-                        # Цвет уровня предмета
                         level_color = Color.GREEN if item.required_level <= self.player.level else Color.YELLOW
                         
-                        # Информация о совместимости с классом
                         class_info = ""
                         if hasattr(item, 'character_classes') and item.character_classes:
                             classes = [c.value for c in item.character_classes]
-                            if len(classes) < 4:  # Если не для всех классов
+                            if len(classes) < 4:
                                 class_info = f" [{Color.CYAN}Для: {', '.join(classes)}{Color.END}]"
                         
                         print(f"  {item_index}. {item.get_colored_name()}")
                         print(f"     {item.description}")
                         print(f"     Требует уровень: {level_color}{item.required_level}{Color.END}{class_info}")
                         
-                        # Статистика предмета
                         stats = []
                         if item.damage > 0:
                             stats.append(f"Урон: {item.damage}")
@@ -2237,11 +2361,25 @@ class Game:
                         if stats:
                             print(f"     {', '.join(stats)}")
                         
+                        # Показываем специальный эффект оружия
+                        if item.special_effect:
+                            effect_names = {
+                                "fire_damage": "Огненный урон",
+                                "mana_steal": "Кража маны",
+                                "critical_chance": "Шанс крита",
+                                "poison": "Яд",
+                                "life_steal": "Кража здоровья",
+                                "stun_chance": "Оглушение",
+                                "armor_penetration": "Пробитие брони"
+                            }
+                            effect_name = effect_names.get(item.special_effect, item.special_effect)
+                            print(f"     {Color.CYAN}Эффект: {effect_name}{Color.END}")
+                        
                         print(f"     Цена: {Color.YELLOW}{item.value} золота{Color.END}")
                         item_map[item_index] = item
                         item_index += 1
             
-            if item_index == 1:  # Нет доступных предметов
+            if item_index == 1:
                 print(f"\n{Color.YELLOW}В магазине нет подходящих для вас предметов.{Color.END}")
                 print(f"Возможно, ваш уровень слишком низок для этой локации.")
                 print(f"Текущая локация: {self.player.location} (уровень: {location_min_level}+)")
@@ -2253,17 +2391,15 @@ class Game:
             
             choice = self.get_choice(1, item_index + 2)
             
-            if choice < item_index:  # Покупка предмета
+            if choice < item_index:
                 item = item_map[choice]
                 
-                # Проверка уровня
                 if item.required_level > self.player.level:
                     print(f"{Color.RED}Ваш уровень слишком низок для этого предмета!{Color.END}")
                     print(f"Ваш уровень: {self.player.level}, требуется: {item.required_level}")
                     time.sleep(2)
                     continue
                 
-                # Проверка класса (дополнительная проверка)
                 if hasattr(item, 'character_classes') and item.character_classes:
                     if self.player.character_class not in item.character_classes:
                         print(f"{Color.RED}Этот предмет не подходит для вашего класса!{Color.END}")
@@ -2284,17 +2420,17 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золота{Color.END}")
                     time.sleep(1)
             
-            elif choice == item_index:  # Продажа
+            elif choice == item_index:
                 self.sell_items()
             
-            elif choice == item_index + 1:  # Ремонт
+            elif choice == item_index + 1:
                 self.repair_equipment()
             
-            elif choice == item_index + 2:  # Уйти
+            elif choice == item_index + 2:
                 break
     
     def sell_items(self):
-        """Продажа предметов с улучшениями"""
+        """Продажа предметов"""
         self.clear_screen()
         self.print_header("ПРОДАЖА ПРЕДМЕТОВ")
         
@@ -2307,13 +2443,10 @@ class Game:
         print(f"\n{Color.BOLD}ВАШИ ПРЕДМЕТЫ:{Color.END}")
         
         for i, item in enumerate(self.player.inventory, 1):
-            sell_price = max(1, item.value // 2)  # Цена продажи - половина стоимости
-            
-            # Бонус к цене за удачу
+            sell_price = max(1, item.value // 2)
             luck_bonus = self.player.get_stat_bonus("luck") * 0.01
             sell_price = int(sell_price * (1 + luck_bonus))
             
-            # Информация о классе
             class_info = ""
             if hasattr(item, 'character_classes') and item.character_classes:
                 classes = [c.value for c in item.character_classes]
@@ -2328,8 +2461,6 @@ class Game:
         if choice > 0:
             item = self.player.inventory[choice - 1]
             sell_price = max(1, item.value // 2)
-            
-            # Бонус к цене за удачу
             luck_bonus = self.player.get_stat_bonus("luck") * 0.01
             sell_price = int(sell_price * (1 + luck_bonus))
             
@@ -2350,7 +2481,6 @@ class Game:
         self.clear_screen()
         self.print_header("РЕМОНТ ЭКИПИРОВКИ")
         
-        # Поиск сломанной или поврежденной экипировки
         damaged_items = []
         for slot, item in self.player.equipped.items():
             if item and item.durability < item.max_durability:
@@ -2396,22 +2526,20 @@ class Game:
             time.sleep(1)
     
     def start_battle(self, location: Location):
-        """Начало битвы с улучшениями"""
+        """Начало битвы"""
         if not location.enemies:
             print(f"{Color.YELLOW}В этой локации нет врагов{Color.END}")
             time.sleep(1)
             return
         
-        # Выбор врага или автоматический выбор самого слабого
         self.clear_screen()
         self.print_header("ВЫБОР ПРОТИВНИКА")
         
         print(f"{Color.RED}Выберите противника:{Color.END}")
         
-        # Сортируем врагов по уровню
         sorted_enemies = sorted(location.enemies, key=lambda x: x.level)
         
-        for i, enemy in enumerate(sorted_enemies[:6], 1):  # Ограничим выбор
+        for i, enemy in enumerate(sorted_enemies[:7], 1):  # Увеличили до 7 врагов
             health_percent = (enemy.health / enemy.max_health) * 100
             health_color = Color.GREEN if health_percent > 50 else Color.YELLOW if health_percent > 20 else Color.RED
             
@@ -2430,21 +2558,20 @@ class Game:
             if enemy.special_abilities:
                 print(f"   Способности: {', '.join(enemy.special_abilities)}")
         
-        print(f"\n{len(sorted_enemies[:6]) + 1}. Сражаться со случайным врагом")
-        print(f"{len(sorted_enemies[:6]) + 2}. Вернуться")
+        print(f"\n{len(sorted_enemies[:7]) + 1}. Сражаться со случайным врагом")
+        print(f"{len(sorted_enemies[:7]) + 2}. Вернуться")
         
-        choice = self.get_choice(1, len(sorted_enemies[:6]) + 2)
+        choice = self.get_choice(1, len(sorted_enemies[:7]) + 2)
         
-        if choice == len(sorted_enemies[:6]) + 1:  # Случайный враг
+        if choice == len(sorted_enemies[:7]) + 1:
             enemy = random.choice(location.enemies)
             self.battle(enemy, location)
-        elif choice <= len(sorted_enemies[:6]):  # Выбранный враг
+        elif choice <= len(sorted_enemies[:7]):
             enemy = sorted_enemies[choice - 1]
             self.battle(enemy, location)
-        # else: Вернуться
     
     def battle(self, enemy: Enemy, location: Location):
-        """Битва с врагом с улучшениями"""
+        """Битва с врагом - ДОБАВЛЕН ФУНКЦИОНАЛ СПЕЦИАЛЬНЫХ ЭФФЕКТОВ"""
         self.current_battle = {
             "enemy": enemy,
             "location": location,
@@ -2452,7 +2579,6 @@ class Game:
             "round": 1
         }
         
-        # Начало битвы
         print(f"\n{Color.RED}Начинается битва с {enemy.name}!{Color.END}")
         time.sleep(1)
         
@@ -2460,17 +2586,14 @@ class Game:
             self.clear_screen()
             self.print_header(f"БИТВА - РАУНД {self.current_battle['round']}")
             
-            # Статус игрока
             print(f"{Color.GREEN}{self.player.name} (Ур.{self.player.level}){Color.END}")
-            health_bar = self.create_health_bar(self.player.health, self.player.max_health, 30)
-            mana_bar = self.create_health_bar(self.player.mana, self.player.max_mana, 30)
-            mana_bar = mana_bar.replace(Color.GREEN, Color.BLUE).replace(Color.RED, Color.PURPLE)
+            health_bar = self.create_bar(self.player.health, self.player.max_health, 30)
+            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 30, Color.BLUE, Color.PURPLE, Color.PURPLE)
             print(f"Здоровье: {health_bar}")
             print(f"Мана:     {mana_bar}")
             
-            # Статус врага
             print(f"\n{Color.RED}{enemy.name} (Ур.{enemy.level}){Color.END}")
-            enemy_health_bar = self.create_health_bar(enemy.health, enemy.max_health, 30)
+            enemy_health_bar = self.create_bar(enemy.health, enemy.max_health, 30)
             print(f"Здоровье: {enemy_health_bar}")
             
             if enemy.special_abilities:
@@ -2479,7 +2602,6 @@ class Game:
             print(f"\n{Color.CYAN}{'-'*70}{Color.END}")
             
             if self.current_battle["player_turn"]:
-                # Ход игрока
                 print(f"{Color.YELLOW}Ваш ход:{Color.END}")
                 print("1. Атаковать")
                 print("2. Использовать предмет")
@@ -2489,8 +2611,9 @@ class Game:
                 
                 choice = self.get_choice(1, 5)
                 
-                if choice == 1:  # Атака
-                    damage, message = self.player.attack()
+                if choice == 1:
+                    # ИСПРАВЛЕНИЕ: передаем врага в атаку для применения специальных эффектов
+                    damage, message = self.player.attack(enemy)
                     if damage > 0:
                         enemy.health -= damage
                         print(f"\n{message}")
@@ -2499,24 +2622,20 @@ class Game:
                         print(f"\n{message}")
                     self.current_battle["player_turn"] = False
                 
-                elif choice == 2:  # Предмет
+                elif choice == 2:
                     self.use_item_in_battle()
-                    # После использования предмета ход переходит врагу
                     self.current_battle["player_turn"] = False
                 
-                elif choice == 3:  # Умение
+                elif choice == 3:
                     self.use_skill_in_battle(enemy)
-                    # После использования умения ход переходит врагу
                     self.current_battle["player_turn"] = False
                 
-                elif choice == 4:  # Защита
-                    # Временное увеличение защиты
+                elif choice == 4:
                     defense_bonus = self.player.get_stat_bonus("constitution") // 2
                     print(f"\n{Color.GREEN}Вы принимаете защитную стойку! (+{defense_bonus} к защите на 1 ход){Color.END}")
-                    # Здесь можно добавить временный эффект
                     self.current_battle["player_turn"] = False
                 
-                elif choice == 5:  # Побег
+                elif choice == 5:
                     escape_chance = 0.5 + self.player.get_stat_bonus("dexterity") * 0.1
                     if random.random() < escape_chance:
                         print(f"\n{Color.GREEN}Вы успешно сбежали!{Color.END}")
@@ -2527,11 +2646,9 @@ class Game:
                         self.current_battle["player_turn"] = False
                 
             else:
-                # Ход врага
                 print(f"\n{Color.YELLOW}Ход противника...{Color.END}")
                 time.sleep(1)
                 
-                # Шанс использования особой способности
                 if enemy.special_abilities and random.random() < 0.3:
                     special_damage, special_message = enemy.use_special_ability()
                     if special_message:
@@ -2541,7 +2658,6 @@ class Game:
                         is_dead = self.player.take_damage(special_damage)
                         print(f"{enemy.name} наносит {special_damage} урона!")
                 else:
-                    # Обычная атака
                     enemy_damage = random.randint(
                         max(1, enemy.damage - 2),
                         enemy.damage + 2
@@ -2560,18 +2676,16 @@ class Game:
             
             time.sleep(1.5)
         
-        # Завершение битвы
         if enemy.health <= 0:
             self.victory(enemy, location)
         elif self.player.health <= 0:
             self.game_over()
     
     def use_item_in_battle(self):
-        """Использовать предмет в бою с улучшениями"""
+        """Использовать предмет в бою"""
         self.clear_screen()
         self.print_header("ИСПОЛЬЗОВАНИЕ ПРЕДМЕТА В БОЮ")
         
-        # Найти предметы, которые можно использовать в бою
         usable_items = []
         for item in self.player.inventory:
             if item.item_type == ItemType.POTION:
@@ -2605,7 +2719,7 @@ class Game:
             self.use_item(item)
     
     def use_skill_in_battle(self, enemy: Enemy):
-        """Использовать умение в бою с улучшениями"""
+        """Использовать умение в бою"""
         self.clear_screen()
         self.print_header("ИСПОЛЬЗОВАНИЕ УМЕНИЯ")
         
@@ -2644,7 +2758,6 @@ class Game:
             if self.player.mana >= skill_info["cost"]:
                 self.player.mana -= skill_info["cost"]
                 
-                # Обработка разных типов умений
                 if "damage_mult" in skill_info:
                     base_damage = self.player.stats["strength"] // 2
                     if self.player.equipped["weapon"]:
@@ -2656,7 +2769,6 @@ class Game:
                     print(f"\n{Color.GREEN}Вы используете {skill_name}!{Color.END}")
                     print(f"{Color.GREEN}Вы нанесли {damage} урона!{Color.END}")
                     
-                    # Дополнительные эффекты
                     if skill_name == "Берсерк" and "self_damage" in skill_info:
                         self.player.health -= skill_info["self_damage"]
                         print(f"{Color.RED}Вы теряете {skill_info['self_damage']} здоровья!{Color.END}")
@@ -2675,11 +2787,10 @@ class Game:
             time.sleep(1.5)
     
     def victory(self, enemy: Enemy, location: Location):
-        """Победа над врагом с улучшениями"""
+        """Победа над врагом"""
         self.clear_screen()
         self.print_header("ПОБЕДА!")
         
-        # Награды
         xp_gained = enemy.xp_reward
         gold_gained = enemy.gold_reward
         
@@ -2688,22 +2799,20 @@ class Game:
         print(f"+{xp_gained} опыта")
         print(f"+{gold_gained} золота")
         
-        # Получение опыта и золота
         leveled_up = self.player.gain_xp(xp_gained)
         self.player.gold += gold_gained
         
-        # Обновление статистики убийств
         enemy_type_name = enemy.type.value
         self.player.killed_enemies[enemy_type_name] = \
             self.player.killed_enemies.get(enemy_type_name, 0) + 1
         
-        # Проверка достижений
         self.player.check_achievement("kill_enemy", 1)
         
         if enemy_type_name == "Дракон":
             self.player.check_achievement("kill_dragon", 1)
+        elif enemy_type_name == "Слизень":
+            self.player.check_achievement("kill_slime", 1)
         
-        # Обновление квестов
         for quest in self.player.quests:
             if quest.status == QuestStatus.IN_PROGRESS:
                 if enemy_type_name in quest.objectives:
@@ -2711,7 +2820,6 @@ class Game:
                     if completed:
                         self.complete_quest(quest)
                 else:
-                    # Проверка общих целей
                     for obj in quest.objectives:
                         if "убить" in obj.lower() and enemy_type_name.lower() in obj.lower():
                             completed = quest.update_objective(obj)
@@ -2719,40 +2827,32 @@ class Game:
                                 self.complete_quest(quest)
                             break
         
-        # Шанс на лут
         loot_chance = enemy.loot_chance + (self.player.get_stat_bonus("luck") * 0.05)
         if random.random() < loot_chance:
-            # Генерация лута в зависимости от уровня врага
             loot_pool = []
             
-            # Базовые предметы
             for item_name, item in self.items_db.items():
                 if item.value <= enemy.level * 25:
                     loot_pool.append(item)
             
             if loot_pool:
-                # Можно получить несколько предметов
                 num_loot = random.randint(1, min(3, enemy.level // 5 + 1))
                 for _ in range(num_loot):
-                    if random.random() < 0.7:  # 70% шанс на каждый дополнительный предмет
+                    if random.random() < 0.7:
                         loot = random.choice(loot_pool).copy()
                         self.player.add_item(loot)
                         print(f"\n{Color.CYAN}Вы нашли: {loot.get_colored_name()}{Color.END}")
         
-        # Уровень повысился
         if leveled_up:
             print(f"\n{Color.YELLOW}ПОЗДРАВЛЯЕМ! Вы достигли {self.player.level} уровня!{Color.END}")
         
-        # Удаление врага из локации
         if enemy in location.enemies:
             location.enemies.remove(enemy)
         
-        # Если врагов не осталось, отмечаем локацию как очищенную
         if not location.enemies:
             location.cleared = True
             print(f"\n{Color.GREEN}Локация '{location.name}' очищена!{Color.END}")
         
-        # Регенерация врагов через некоторое время
         if not location.enemies and location.respawn_timer >= 3:
             location.generate_enemies()
             location.cleared = False
@@ -2765,11 +2865,9 @@ class Game:
         print(f"\n{Color.GREEN}✧ ✧ ✧ КВЕСТ ЗАВЕРШЕН: {quest.name} ✧ ✧ ✧{Color.END}")
         print(f"Награда: {quest.reward_xp} опыта, {quest.reward_gold} золота")
         
-        # Выдача наград
         self.player.gain_xp(quest.reward_xp)
         self.player.gold += quest.reward_gold
         
-        # Дополнительные предметы
         if quest.reward_items:
             print(f"\n{Color.YELLOW}Дополнительные награды:{Color.END}")
             for item in quest.reward_items:
@@ -2777,13 +2875,9 @@ class Game:
                 self.player.add_item(item_copy)
                 print(f"  - {item_copy.get_colored_name()}")
         
-        # Обновление статуса квеста
         quest.status = QuestStatus.COMPLETED
-        
-        # Проверка достижений
         self.player.check_achievement("complete_quest", 1)
         
-        # Если это главный квест и это дракон
         if quest.name == "Угроза дракона":
             self.player.check_achievement("complete_game", 1)
             print(f"\n{Color.YELLOW}✧ ✧ ✧ ПОБЕДА В ИГРЕ! ✧ ✧ ✧{Color.END}")
@@ -2793,7 +2887,7 @@ class Game:
         time.sleep(2)
     
     def game_over(self):
-        """Конец игры с улучшениями"""
+        """Конец игры"""
         self.clear_screen()
         self.print_header("ИГРА ОКОНЧЕНА")
         
@@ -2805,13 +2899,11 @@ class Game:
         print(f"Золото: {self.player.gold}")
         print(f"Убито врагов: {sum(self.player.killed_enemies.values())}")
         
-        # Достижения
         completed_achievements = [a for a in self.player.achievements if a.completed]
         if completed_achievements:
             print(f"Достижений: {len(completed_achievements)}/{len(self.player.achievements)}")
             print(f"Лучшее достижение: {completed_achievements[-1].name}")
         
-        # Время игры
         if self.game_start_time:
             play_time = datetime.now() - self.game_start_time
             hours = play_time.seconds // 3600
@@ -2865,7 +2957,6 @@ class Game:
         observation = random.choice(observations)
         print(f"{Color.CYAN}{observation}{Color.END}")
         
-        # Шанс получить полезную информацию
         if random.random() < 0.4:
             info_types = [
                 "Вы понимаете, что здесь недавно прошла группа искателей приключений",
@@ -2878,7 +2969,7 @@ class Game:
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы продолжить...{Color.END}")
     
     def visit_tavern(self):
-        """Посещение таверны с улучшениями - ДОБАВЛЕН БЛЭКДЖЕК"""
+        """Посещение таверны"""
         while True:
             self.clear_screen()
             self.print_header("ТАВЕРНА 'ПЬЯНЫЙ ГНОМ'")
@@ -2904,7 +2995,7 @@ class Game:
             
             choice = self.get_choice(1, 9)
             
-            if choice == 1:  # Выпить эль
+            if choice == 1:
                 if self.player.gold >= 10:
                     self.player.gold -= 10
                     self.player.heal(30)
@@ -2913,7 +3004,7 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золота{Color.END}")
                 time.sleep(1)
             
-            elif choice == 2:  # Заказать еду
+            elif choice == 2:
                 if self.player.gold >= 20:
                     self.player.gold -= 20
                     self.player.heal(60)
@@ -2922,7 +3013,7 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золта{Color.END}")
                 time.sleep(1)
             
-            elif choice == 3:  # Праздничный ужин
+            elif choice == 3:
                 if self.player.gold >= 50:
                     self.player.gold -= 50
                     self.player.heal(self.player.max_health - self.player.health)
@@ -2931,10 +3022,9 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золта{Color.END}")
                 time.sleep(1)
             
-            elif choice == 4:  # Поговорить с барменом
+            elif choice == 4:
                 print(f"\n{Color.YELLOW}Бармен:{Color.END} 'Приветствую, путник! Слушай, есть тут дело...'")
                 
-                # Проверка на доступные квесты
                 available_quests = [q for q in self.quests_db.values() 
                                    if q.status == QuestStatus.NOT_STARTED 
                                    and q.required_level <= self.player.level
@@ -2956,7 +3046,7 @@ class Game:
                 
                 time.sleep(2)
             
-            elif choice == 5:  # Послушать сплетни
+            elif choice == 5:
                 rumors = [
                     "Говорят, в Темном лесу видели древнего волхва",
                     "В гоблинских пещеры нашли богатую жилу золота",
@@ -2973,7 +3063,7 @@ class Game:
                     print(f"  - {random.choice(rumors)}")
                 time.sleep(2)
             
-            elif choice == 6:  # Сыграть в кости
+            elif choice == 6:
                 if self.player.gold >= 10:
                     print(f"\n{Color.YELLOW}Игра в кости!{Color.END}")
                     print("Бросаете 2 кубика. Если выпадет 7 или 11 - вы выигрываете!")
@@ -2997,17 +3087,16 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золта для игры{Color.END}")
                 time.sleep(2)
             
-            elif choice == 7:  # Играть в Блэкджек
+            elif choice == 7:
                 self.play_blackjack()
             
-            elif choice == 8:  # Арендовать комнату
+            elif choice == 8:
                 if self.player.gold >= 30:
                     self.player.gold -= 30
                     self.player.health = self.player.max_health
                     self.player.mana = self.player.max_mana
                     print(f"{Color.GREEN}Вы арендовали комнату и полностью восстановили здоровье и ману!{Color.END}")
                     
-                    # Восстановление прочности экипировки
                     for slot in ["weapon", "armor", "helmet", "gloves", "boots"]:
                         if self.player.equipped[slot]:
                             self.player.equipped[slot].repair(50)
@@ -3016,7 +3105,7 @@ class Game:
                     print(f"{Color.RED}У вас недостаточно золта{Color.END}")
                 time.sleep(2)
             
-            elif choice == 9:  # Уйти
+            elif choice == 9:
                 break
     
     def play_blackjack(self):
@@ -3036,21 +3125,19 @@ class Game:
         if confirm.lower() != 'y':
             return
         
-        # Инициализация
         deck = Deck()
         player_hand = []
         dealer_hand = []
         
-        # Раздача карт
         player_hand.append(deck.draw())
         player_hand.append(deck.draw())
         dealer_hand.append(deck.draw())
         dealer_hand.append(deck.draw())
         
         player_total = self.calculate_hand_value(player_hand)
-        dealer_showing = dealer_hand[0].value
+        # Инициализируем dealer_total здесь
+        dealer_total = self.calculate_hand_value(dealer_hand)
         
-        # Основной игровой цикл
         while True:
             self.clear_screen()
             self.print_header("БЛЭКДЖЕК")
@@ -3085,12 +3172,11 @@ class Game:
             else:
                 break
         
-        # Ход дилера
+        # Ход дилера - только если у игрока не перебор
         if player_total <= 21:
             print(f"\n{Color.YELLOW}Ход дилера...{Color.END}")
             time.sleep(1)
             
-            dealer_total = self.calculate_hand_value(dealer_hand)
             print(f"\nКарты дилера: {', '.join(str(card) for card in dealer_hand)}")
             print(f"Счет дилера: {dealer_total}")
             
@@ -3106,7 +3192,15 @@ class Game:
         # Определение победителя
         print(f"\n{Color.CYAN}{'='*50}{Color.END}")
         print(f"Ваш счет: {player_total}")
-        print(f"Счет дилера: {dealer_total}")
+        
+        # Обязательно выводим счет дилера, даже если был перебор
+        if player_total <= 21:
+            print(f"Счет дилера: {dealer_total}")
+        else:
+            # Если у игрока перебор, все равно показываем карты дилера
+            dealer_total = self.calculate_hand_value(dealer_hand)
+            print(f"Карты дилера: {', '.join(str(card) for card in dealer_hand)}")
+            print(f"Счет дилера: {dealer_total}")
         
         if player_total > 21:
             result = "Вы проиграли!"
@@ -3151,7 +3245,6 @@ class Game:
             else:
                 total += card.value
         
-        # Обработка тузов
         while total > 21 and aces > 0:
             total -= 10
             aces -= 1
@@ -3159,7 +3252,7 @@ class Game:
         return total
     
     def visit_bordello(self):
-        """Посещение борделя с улучшениями"""
+        """Посещение борделя"""
         while True:
             self.clear_screen()
             self.print_header("РОСКОШНЫЙ БОРДЕЛЬ")
@@ -3173,7 +3266,6 @@ class Game:
             print(f"Здоровье: {self.player.health}/{self.player.max_health}")
             print(f"Боевой дух: {self.player.morale}/100")
             
-            # Показать доступных девушек
             available_girls = [girl for girl in self.bordello_girls if girl.available]
             unavailable_girls = [girl for girl in self.bordello_girls if not girl.available]
             
@@ -3201,7 +3293,7 @@ class Game:
             
             choice = self.get_choice(1, 5)
             
-            if choice == 1:  # Выбрать девушку
+            if choice == 1:
                 if not available_girls:
                     print(f"{Color.YELLOW}Нет доступных девушек в данный момент.{Color.END}")
                     time.sleep(1)
@@ -3221,7 +3313,6 @@ class Game:
                     result, effects = selected_girl.provide_service()
                     print(f"\n{Color.CYAN}{result}{Color.END}")
                     
-                    # Применение эффектов
                     self.player.gold -= selected_girl.price
                     
                     if "health" in effects:
@@ -3241,11 +3332,9 @@ class Game:
                         print(f"{Color.GREEN}+{effects['stamina_recovery']} выносливости{Color.END}")
                     
                     if "quest_hint" in effects and self.player.quests:
-                        # Дать подсказку по квесту
                         quest = random.choice(self.player.quests)
                         print(f"{Color.CYAN}Вы узнали полезную информацию о квесте '{quest.name}'{Color.END}")
                     
-                    # Проверка квеста
                     for quest in self.player.quests:
                         if quest.status == QuestStatus.IN_PROGRESS:
                             if "Бордель" in quest.objectives:
@@ -3262,7 +3351,7 @@ class Game:
                 
                 time.sleep(2)
             
-            elif choice == 2:  # Поговорить с хозяйкой
+            elif choice == 2:
                 print(f"\n{Color.PURPLE}Хозяйка:{Color.END}")
                 print("'Добро пожаловать в наше заведение, дорогой гость!'")
                 print("'У нас только самые красивые и умелые девушки.'")
@@ -3283,7 +3372,7 @@ class Game:
                 
                 time.sleep(2)
             
-            elif choice == 3:  # Специальные предложения
+            elif choice == 3:
                 print(f"\n{Color.BOLD}СПЕЦИАЛЬНЫЕ ПРЕДЛОЖЕНИЯ:{Color.END}")
                 print("1. Ночной пакет (300 золота)")
                 print("   - Полное восстановление всех характеристик")
@@ -3314,12 +3403,10 @@ class Game:
                             self.player.mana = self.player.max_mana
                             self.player.morale = 100
                             self.player.stamina = 100
-                            # Здесь можно добавить временные бонусы
                             print(f"{Color.GREEN}Все характеристики восстановлены!{Color.END}")
                         
                         elif special_choice == '2':
                             print(f"\n{Color.PURPLE}Обучение прошло успешно!{Color.END}")
-                            # Бонусы можно сохранять в отдельном словаре временных эффектов
                             print(f"{Color.GREEN}Вы стали более харизматичным!{Color.END}")
                         
                         elif special_choice == '3':
@@ -3332,7 +3419,7 @@ class Game:
                 
                 time.sleep(2)
             
-            elif choice == 4:  # VIP-комната
+            elif choice == 4:
                 if self.player.gold >= 100:
                     confirm = input("Отдохнуть в VIP-комнате за 100 золота? (y/n): ")
                     if confirm.lower() == 'y':
@@ -3343,7 +3430,6 @@ class Game:
                         self.player.morale = 100
                         self.player.stamina = 100
                         
-                        # Восстановление девушек
                         for girl in self.bordello_girls:
                             girl.rest()
                         
@@ -3354,15 +3440,14 @@ class Game:
                 
                 time.sleep(2)
             
-            elif choice == 5:  # Уйти
-                # Восстановление некоторых девушек при уходе
+            elif choice == 5:
                 for girl in self.bordello_girls:
                     if random.random() < 0.3:
                         girl.rest()
                 break
     
     def travel(self):
-        """Путешествие между локациями с улучшениями"""
+        """Путешествие между локациями"""
         while True:
             self.clear_screen()
             self.print_header("ПУТЕШЕСТВИЕ")
@@ -3376,7 +3461,6 @@ class Game:
             print(f"Тип: {current_loc.type.value}")
             print(f"Уровень сложности: {current_loc.level_range[0]}-{current_loc.level_range[1]}")
             
-            # Статус локации
             if current_loc.cleared:
                 print(f"{Color.GREEN}✓ Локация очищена{Color.END}")
             
@@ -3387,9 +3471,7 @@ class Game:
                 location = self.game_world.get(loc_name)
                 if location:
                     status = "✓" if location.discovered else "?"
-                    difficulty_warning = ""
                     
-                    # Предупреждение о сложности
                     if self.player.level < location.level_range[0]:
                         difficulty_warning = f" {Color.RED}(сложно){Color.END}"
                     elif self.player.level < location.level_range[0] + 2:
@@ -3408,7 +3490,6 @@ class Game:
                 target_loc_name = available_locations[choice - 1]
                 target_loc = self.game_world[target_loc_name]
                 
-                # Проверка уровня с учетом сложности
                 difficulty_mult = {
                     Difficulty.EASY: 0.8,
                     Difficulty.NORMAL: 1.0,
@@ -3428,11 +3509,9 @@ class Game:
                     if confirm.lower() != 'y':
                         continue
                 
-                # Путешествие
                 print(f"\n{Color.YELLOW}Вы отправляетесь в {target_loc_name}...{Color.END}")
                 time.sleep(1)
                 
-                # События в пути
                 events = [
                     ("Вы безопасно добрались до места", 0.5),
                     ("В пути вы нашли немного золота", 0.15),
@@ -3472,7 +3551,6 @@ class Game:
                 
                 elif "торговца" in event:
                     print(f"{Color.GREEN}Странный торговец предлагает вам товары по низким ценам!{Color.END}")
-                    # Здесь можно добавить мини-магазин
                 
                 elif "лагерь" in event:
                     print(f"{Color.CYAN}Искатели приключений делятся с вами припасами.{Color.END}")
@@ -3481,7 +3559,6 @@ class Game:
                 
                 elif "тайник" in event:
                     print(f"{Color.GREEN}Вы нашли тайник с припасами!{Color.END}")
-                    # Добавляем зелья
                     potions = ["Зелье здоровья", "Зелье маны"]
                     for potion_name in random.sample(potions, random.randint(1, 2)):
                         if potion_name in self.items_db:
@@ -3489,11 +3566,9 @@ class Game:
                             self.player.add_item(potion)
                             print(f"{Color.CYAN}+ {potion.name}{Color.END}")
                 
-                # Прибытие
                 self.player.location = target_loc_name
                 target_loc.discovered = True
                 
-                # Проверка на респавн врагов
                 if target_loc.should_respawn():
                     print(f"{Color.YELLOW}В локации появились новые враги.{Color.END}")
                 
@@ -3504,14 +3579,14 @@ class Game:
             else:
                 break
     
+    # ОПТИМИЗАЦИЯ: методы сохранения/загрузки
     def save_game(self):
-        """Сохранение игры с улучшениями"""
+        """Сохранение игры"""
         if not self.player:
             print(f"{Color.RED}Нет активного персонажа для сохранения{Color.END}")
             time.sleep(1)
             return
         
-        # Подготовка данных для сохранения
         save_data = {
             "version": self.version,
             "difficulty": self.player.difficulty.value,
@@ -3548,7 +3623,8 @@ class Game:
                     "durability": item.durability,
                     "max_durability": item.max_durability,
                     "required_level": item.required_level,
-                    "armor_slot": item.armor_slot
+                    "armor_slot": item.armor_slot,
+                    "special_effect": item.special_effect
                 }
                 for item in self.player.inventory
             ],
@@ -3557,7 +3633,8 @@ class Game:
                     "name": item.name,
                     "item_type": item.item_type.value,
                     "durability": item.durability,
-                    "max_durability": item.max_durability
+                    "max_durability": item.max_durability,
+                    "special_effect": item.special_effect
                 } if item else None
                 for slot, item in self.player.equipped.items()
             },
@@ -3593,7 +3670,6 @@ class Game:
             }
         }
         
-        # Сохранение в файл
         save_dir = "saves"
         os.makedirs(save_dir, exist_ok=True)
         
@@ -3605,7 +3681,6 @@ class Game:
             
             print(f"{Color.GREEN}Игра успешно сохранена в слот {self.player.save_slot}!{Color.END}")
             
-            # Обновляем время игры у игрока
             if self.game_start_time:
                 self.player.play_time += (datetime.now() - self.game_start_time).seconds
                 self.game_start_time = datetime.now()
@@ -3616,18 +3691,16 @@ class Game:
         time.sleep(1)
     
     def save_game_menu(self):
-        """Меню выбора слота для сохранения с улучшениями"""
+        """Меню выбора слота для сохранения"""
         self.clear_screen()
         self.print_header("СОХРАНЕНИЕ ИГРЫ")
         
-        # Проверяем существующие сохранения
         save_dir = "saves"
         os.makedirs(save_dir, exist_ok=True)
         
         print(f"{Color.YELLOW}Выберите слот для сохранения:{Color.END}\n")
         
-        # Информация о слотах
-        for slot in range(1, 6):  # Увеличили до 5 слотов
+        for slot in range(1, 6):
             save_file = os.path.join(save_dir, f"save_{slot}.json")
             
             if os.path.exists(save_file):
@@ -3664,23 +3737,19 @@ class Game:
                 self.player.save_slot = choice
                 self.save_game()
         elif choice == 6:
-            # Быстрое сохранение
             self.save_game()
-        # else: Отмена
     
     def load_game_menu(self):
-        """Меню выбора слота для загрузки с улучшениями"""
+        """Меню выбора слота для загрузки"""
         self.clear_screen()
         self.print_header("ЗАГРУЗКА СОХРАНЕНИЯ")
         
-        # Проверяем существующие сохранения
         save_dir = "saves"
         os.makedirs(save_dir, exist_ok=True)
         
         saves = []
         print(f"{Color.YELLOW}Выберите сохранение для загрузки:{Color.END}\n")
         
-        # Информация о слотах
         for slot in range(1, 6):
             save_file = os.path.join(save_dir, f"save_{slot}.json")
             
@@ -3725,14 +3794,13 @@ class Game:
             self.load_save_file(save_slot)
     
     def load_save_file(self, slot: int):
-        """Загрузка конкретного файла сохранения с улучшениями"""
+        """Загрузка конкретного файла сохранения"""
         save_file = os.path.join("saves", f"save_{slot}.json")
         
         try:
             with open(save_file, 'r', encoding='utf-8') as f:
                 save_data = json.load(f)
             
-            # Проверка версии
             save_version = save_data.get("version", "1.0.0")
             if save_version != self.version:
                 print(f"{Color.YELLOW}Внимание: сохранение создано в версии {save_version}, текущая версия {self.version}{Color.END}")
@@ -3741,7 +3809,6 @@ class Game:
                 if confirm.lower() != 'y':
                     return
             
-            # Восстановление сложности
             difficulty_str = save_data.get("difficulty", "Нормальный")
             difficulty_map = {
                 "Легкий": Difficulty.EASY,
@@ -3751,7 +3818,6 @@ class Game:
             }
             self.difficulty = difficulty_map.get(difficulty_str, Difficulty.NORMAL)
             
-            # Восстановление игрока
             player_data = save_data["player"]
             self.player = Player(player_data["name"], self.difficulty)
             self.player.level = player_data["level"]
@@ -3763,7 +3829,6 @@ class Game:
             self.player.max_mana = player_data["max_mana"]
             self.player.gold = player_data["gold"]
             
-            # Класс
             class_map = {
                 "Воин": CharacterClass.WARRIOR,
                 "Маг": CharacterClass.MAGE,
@@ -3780,7 +3845,6 @@ class Game:
             self.player.morale = player_data.get("morale", 100)
             self.player.stamina = player_data.get("stamina", 100)
             
-            # Инвентарь
             for item_data in save_data["inventory"]:
                 try:
                     item_type = ItemType(item_data["item_type"])
@@ -3795,30 +3859,28 @@ class Game:
                         description=item_data["description"],
                         durability=item_data.get("durability", 100),
                         required_level=item_data.get("required_level", 1),
-                        armor_slot=item_data.get("armor_slot")
+                        armor_slot=item_data.get("armor_slot"),
+                        special_effect=item_data.get("special_effect")
                     )
                     item.rarity = item_data.get("rarity", "Обычный")
                     self.player.add_item(item)
                 except Exception as e:
                     print(f"{Color.YELLOW}Предупреждение: не удалось загрузить предмет {item_data.get('name', 'Неизвестно')}: {e}{Color.END}")
             
-            # Экипировка
             equipped_data = save_data.get("equipped", {})
-            for slot, item_data in equipped_data.items():
+            for slot_name, item_data in equipped_data.items():
                 if item_data:
-                    # Ищем предмет в инвентаре по имени
                     for item in self.player.inventory:
                         if item.name == item_data["name"]:
-                            # Обновляем прочность
                             item.durability = item_data.get("durability", item.durability)
                             item.max_durability = item_data.get("max_durability", item.max_durability)
+                            if "special_effect" in item_data:
+                                item.special_effect = item_data["special_effect"]
                             
-                            # Экипируем
-                            self.player.equipped[slot] = item
+                            self.player.equipped[slot_name] = item
                             self.player.inventory.remove(item)
                             break
             
-            # Квесты
             self.player.quests = []
             for quest_data in save_data.get("quests", []):
                 quest_id = quest_data.get("id")
@@ -3826,7 +3888,6 @@ class Game:
                     quest = copy.deepcopy(self.quests_db[quest_id])
                     quest.status = QuestStatus(quest_data.get("status", "NOT_STARTED"))
                     
-                    # Восстановление времени начала
                     start_time_str = quest_data.get("start_time")
                     if start_time_str:
                         quest.start_time = datetime.fromisoformat(start_time_str)
@@ -3835,7 +3896,6 @@ class Game:
                     quest.objectives = quest_data.get("objectives", {})
                     self.player.quests.append(quest)
             
-            # Достижения
             self.player.achievements = []
             for achievement_data in save_data.get("achievements", []):
                 achievement = Achievement(
@@ -3855,14 +3915,12 @@ class Game:
                 
                 self.player.achievements.append(achievement)
             
-            # Игровой мир
             for loc_name, loc_data in save_data.get("game_world", {}).items():
                 if loc_name in self.game_world:
                     self.game_world[loc_name].discovered = loc_data.get("discovered", False)
                     self.game_world[loc_name].cleared = loc_data.get("cleared", False)
                     self.game_world[loc_name].respawn_timer = loc_data.get("respawn_timer", 0)
             
-            # Установка времени начала игры
             self.game_start_time = datetime.now()
             
             print(f"{Color.GREEN}Игра успешно загружена!{Color.END}")
@@ -3875,7 +3933,7 @@ class Game:
             time.sleep(2)
     
     def view_saves(self):
-        """Просмотр всех сохранений с улучшениями"""
+        """Просмотр всех сохранений"""
         self.clear_screen()
         self.print_header("ПРОСМОТР СОХРАНЕНИЙ")
         
@@ -3909,7 +3967,6 @@ class Game:
                     print(f"  Время игры: {hours:02d}:{minutes:02d}:{seconds:02d}")
                     print(f"  Версия: {version}")
                     
-                    # Достижения
                     achievements = save_data.get("achievements", [])
                     completed = len([a for a in achievements if a.get("completed", False)])
                     total = len(achievements) if achievements else 0
@@ -3930,18 +3987,16 @@ class Game:
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы вернуться...{Color.END}")
     
     def delete_save_menu(self):
-        """Меню удаления сохранения с улучшениями"""
+        """Меню удаления сохранения"""
         self.clear_screen()
         self.print_header("УДАЛЕНИЕ СОХРАНЕНИЙ")
         
-        # Проверяем существующие сохранения
         save_dir = "saves"
         os.makedirs(save_dir, exist_ok=True)
         
         saves = []
         print(f"{Color.RED}Выберите сохранение для удаления:{Color.END}\n")
         
-        # Информация о слотах
         for slot in range(1, 6):
             save_file = os.path.join(save_dir, f"save_{slot}.json")
             
@@ -3986,7 +4041,6 @@ class Game:
                     os.remove(save_file)
                     print(f"{Color.GREEN}Сохранение удалено!{Color.END}")
                     
-                    # Если удаляем текущую игру, сбрасываем игрока
                     if self.player and self.player.save_slot == save_slot:
                         print(f"{Color.YELLOW}Текущая игра завершена.{Color.END}")
                         self.player = None
@@ -3995,7 +4049,7 @@ class Game:
                 
                 time.sleep(2)
         
-        elif choice == len(saves) + 1:  # Удалить все
+        elif choice == len(saves) + 1:
             confirm = input(f"\n{Color.RED}ВНИМАНИЕ! Вы уверены, что хотите удалить ВСЕ сохранения? (y/n): {Color.END}")
             
             if confirm.lower() == 'y':
@@ -4011,7 +4065,6 @@ class Game:
                 
                 print(f"{Color.GREEN}Удалено {deleted} сохранений!{Color.END}")
                 
-                # Сбрасываем текущего игрока
                 if self.player:
                     print(f"{Color.YELLOW}Текущая игра завершена.{Color.END}")
                     self.player = None
@@ -4019,7 +4072,7 @@ class Game:
                 time.sleep(2)
     
     def manage_saves_menu(self):
-        """Меню управления сохранениями с улучшениями"""
+        """Меню управления сохранениями"""
         while True:
             self.clear_screen()
             self.print_header("УПРАВЛЕНИЕ СОХРАНЕНИЯМИ")
@@ -4049,7 +4102,6 @@ class Game:
         save_dir = "saves"
         os.makedirs(save_dir, exist_ok=True)
         
-        # Находим существующие сохранения
         saves = []
         for slot in range(1, 6):
             save_file = os.path.join(save_dir, f"save_{slot}.json")
@@ -4073,7 +4125,6 @@ class Game:
         if source_choice <= len(saves):
             source_slot = saves[source_choice - 1]
             
-            # Выбор целевого слота
             print(f"\n{Color.YELLOW}Выберите слот для копирования:{Color.END}\n")
             
             target_slots = []
@@ -4098,7 +4149,6 @@ class Game:
                         with open(source_file, 'r', encoding='utf-8') as f:
                             save_data = json.load(f)
                         
-                        # Обновляем слот сохранения
                         if "player" in save_data:
                             save_data["player"]["save_slot"] = target_slot
                         
@@ -4145,32 +4195,33 @@ class Game:
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы вернуться...{Color.END}")
     
     def show_about(self):
-        """Информация об игре с улучшениями"""
+        """Информация об игре"""
         self.clear_screen()
         self.print_header("ОБ ИГРЕ")
         
-        print(f"{Color.CYAN}ДРАКОНОВОЕ ЗАКЛИНАНИЕ - УЛУЧШЕННАЯ ВЕРСИЯ 2.0.2{Color.END}")
+        print(f"{Color.CYAN}ДРАКОНОВОЕ ЗАКЛИНАНИЕ - УЛУЧШЕННАЯ ВЕРСИЯ 2.0.3{Color.END}")
         print("Полноценная текстовая RPG игра")
         print(f"Версия: {self.version}")
-        print("\nИсправления и улучшения версии 2.0.2:")
-        print("• Исправлена ошибка при создании персонажа-мага")
-        print("• Исправлены проблемы с локациями при битве с врагами")
-        print("• Добавлен роскошный бордель с 6 девушками")
-        print("• Добавлена игра Блэкджек в таверне")
-        print("• Улучшена система боя и баланс классов")
+        print("\nИсправления и улучшения версии 2.0.3:")
+        print("• Исправлено количество врагов на локациях (теперь 5-10 вместо 2-8)")
+        print("• Добавлены специальные эффекты для всего оружия")
+        print("• Оптимизирован код без потери функциональности")
         print("• Исправлены мелкие баги и улучшена стабильность")
         
-        print(f"\n{Color.BOLD}НОВЫЕ ФУНКЦИИ:{Color.END}")
-        print("• Бордель: расслабление, восстановление, специальные услуги")
-        print("• Блэкджек: полноценная карточная игра с дилером")
-        print("• Улучшенные характеристики: боевой дух и выносливость")
-        print("• Новые квесты, включая квест для борделя")
+        print(f"\n{Color.BOLD}СПЕЦИАЛЬНЫЕ ЭФФЕКТЫ ОРУЖИЯ:{Color.END}")
+        print("• Огненный урон - дополнительный урон огнем")
+        print("• Кража маны - восстанавливает ману при ударе")
+        print("• Шанс крита - увеличивает шанс критического удара")
+        print("• Яд - наносит дополнительный урон ядом")
+        print("• Кража здоровья - восстанавливает здоровье при ударе")
+        print("• Оглушение - шанс оглушить врага на 1 ход")
+        print("• Пробитие брони - игнорирует часть защиты врага")
         
         print(f"\n{Color.BOLD}ИСПРАВЛЕНИЯ:{Color.END}")
-        print("• Класс Маг теперь работает корректно")
-        print("• Локации не ломаются после очистки от врагов")
-        print("• Улучшена навигация между локациями")
-        print("• Исправлены проблемы с сохранением и загрузкой")
+        print("• Увеличены враги на локациях с 2-8 до 5-10")
+        print("• Добавлены новые виды оружия для всех классов")
+        print("• Улучшена система специальных эффектов")
+        print("• Оптимизированы методы вывода информации")
         
         print(f"\n{Color.YELLOW}Удачи в приключениях!{Color.END}")
         
@@ -4185,6 +4236,14 @@ class Game:
         print("• Во время выбора опций вводите цифру соответствующего пункта")
         print("• Для выхода из игры введите 'выход', 'exit' или 'quit'")
         print("• В бою внимательно читайте опции действий")
+        
+        print(f"\n{Color.YELLOW}НОВЫЕ ФУНКЦИИ 2.0.3:{Color.END}")
+        print("• Оружие теперь имеет специальные эффекты:")
+        print("  - Огненный/ледяной урон - дополнительный урон")
+        print("  - Кража маны/здоровья - восстановление при ударе")
+        print("  - Яд - дополнительный урон в течение нескольких ходов")
+        print("  - Оглушение - шанс пропуска хода врага")
+        print("  - Пробитие брони - игнорирует защиту врага")
         
         print(f"\n{Color.YELLOW}ХАРАКТЕРИСТИКИ ПЕРСОНАЖА:{Color.END}")
         print("• Сила - увеличивает урон в ближнем бою")
@@ -4204,7 +4263,6 @@ class Game:
         print("• Ремонтировать экипировку можно в магазинах")
         print("• Зелья можно использовать для восстановления здоровья/маны")
         print("• Свитки имеют различные магические эффекты")
-        print("• Шлемы, перчатки и сапоги экипируются в соответствующие слоты")
         
         print(f"\n{Color.YELLOW}КВЕСТЫ И ЗАДАНИЯ:{Color.END}")
         print("• Основные квесты продвигают сюжет")
@@ -4218,12 +4276,12 @@ class Game:
         print("3. Не забывайте ремонтировать экипировку")
         print("4. Выполняйте побочные квесты для прокачки")
         print("5. Сохраняйтесь перед сложными битвами")
-        print("6. Экипируйте предметы в правильные слоты (шлем в шлем, перчатки в перчатки и т.д.)")
+        print("6. Обращайте внимание на специальные эффекты оружия")
         
         input(f"\n{Color.WHITE}Нажмите Enter, чтобы вернуться...{Color.END}")
     
     def main_menu(self):
-        """Главное меню с улучшениями"""
+        """Главное меню"""
         while self.is_running:
             self.clear_screen()
             self.print_header("ДРАКОНОВОЕ ЗАКЛИНАНИЕ - УЛУЧШЕННАЯ ВЕРСИЯ")
@@ -4232,7 +4290,6 @@ class Game:
             print(f"{Color.YELLOW}Версия: {self.version}{Color.END}")
             
             if self.player:
-                # Показываем информацию о текущем персонаже
                 print(f"\n{Color.GREEN}Текущий персонаж:{Color.END}")
                 print(f"Имя: {self.player.name}")
                 print(f"Класс: {self.player.character_class.value}")
@@ -4272,69 +4329,68 @@ class Game:
             choice = self.get_choice(1, max_choice)
             
             if self.player:
-                if choice == 1:  # Новая игра
+                if choice == 1:
                     confirm = input("Начать новую игру? Текущий прогресс будет потерян. (y/n): ")
                     if confirm.lower() == 'y':
                         self.create_character()
                         self.game_start_time = datetime.now()
                         self.game_loop()
                 
-                elif choice == 2:  # Загрузить игру
+                elif choice == 2:
                     self.load_game_menu()
                     if self.player:
                         self.game_start_time = datetime.now()
                         self.game_loop()
                 
-                elif choice == 3:  # Продолжить
+                elif choice == 3:
                     self.game_loop()
                 
-                elif choice == 4:  # Управление сохранениями
+                elif choice == 4:
                     self.manage_saves_menu()
                 
-                elif choice == 5:  # Достижения
+                elif choice == 5:
                     self.show_achievements()
                 
-                elif choice == 6:  # Об игре
+                elif choice == 6:
                     self.show_about()
                 
-                elif choice == 7:  # Справка
+                elif choice == 7:
                     self.show_help()
                 
-                elif choice == 8:  # Выйти
+                elif choice == 8:
                     print(f"\n{Color.YELLOW}До свидания!{Color.END}")
                     self.is_running = False
             
             else:
-                if choice == 1:  # Новая игра
+                if choice == 1:
                     self.create_character()
                     self.game_start_time = datetime.now()
                     self.game_loop()
                 
-                elif choice == 2:  # Загрузить игру
+                elif choice == 2:
                     self.load_game_menu()
                     if self.player:
                         self.game_start_time = datetime.now()
                         self.game_loop()
                 
-                elif choice == 3:  # Управление сохранениями
+                elif choice == 3:
                     self.manage_saves_menu()
                 
-                elif choice == 4:  # Об игре
+                elif choice == 4:
                     self.show_about()
                 
-                elif choice == 5:  # Справка
+                elif choice == 5:
                     self.show_help()
                 
-                elif choice == 6:  # Выйти
+                elif choice == 6:
                     print(f"\n{Color.YELLOW}До свидания!{Color.END}")
                     self.is_running = False
     
     def game_loop(self):
-        """Основной игровой цикл с улучшениями"""
+        """Основной игровой цикл"""
         while self.is_running and self.player and self.player.health > 0:
             self.clear_screen()
             
-            # Текущая локация
             current_loc = self.game_world.get(self.player.location)
             if not current_loc:
                 print(f"{Color.RED}Ошибка: локация не найдена{Color.END}")
@@ -4342,21 +4398,17 @@ class Game:
             
             self.print_header(f"{self.player.location.upper()}")
             
-            # Краткая информация о локации
             print(f"{Color.CYAN}{current_loc.description}{Color.END}")
             print(f"Тип: {current_loc.type.value}")
             print(f"Уровень сложности: {current_loc.level_range[0]}-{current_loc.level_range[1]}")
             
-            # Статус игрока
             print(f"\n{Color.GREEN}{self.player.name} (Ур.{self.player.level}){Color.END}")
-            health_bar = self.create_health_bar(self.player.health, self.player.max_health, 20)
-            mana_bar = self.create_health_bar(self.player.mana, self.player.max_mana, 20)
-            mana_bar = mana_bar.replace(Color.GREEN, Color.BLUE).replace(Color.RED, Color.PURPLE)
+            health_bar = self.create_bar(self.player.health, self.player.max_health, 20)
+            mana_bar = self.create_bar(self.player.mana, self.player.max_mana, 20, Color.BLUE, Color.PURPLE, Color.PURPLE)
             print(f"Здоровье: {health_bar}")
             print(f"Мана:     {mana_bar}")
             print(f"Золото: {Color.YELLOW}{self.player.gold}{Color.END}")
             
-            # Статус локации
             if current_loc.cleared:
                 print(f"{Color.GREEN}✓ Локация очищена{Color.END}")
             elif current_loc.enemies:
@@ -4366,14 +4418,11 @@ class Game:
             
             print(f"\n{Color.CYAN}{'-'*70}{Color.END}")
             
-            # Меню действий
             menu_options = []
             
-            # Общие действия
             menu_options.append(("1", "Исследовать локацию"))
             menu_options.append(("2", "Путешествовать"))
             
-            # Действия в городе
             if current_loc.type == LocationType.TOWN:
                 if current_loc.has_tavern:
                     menu_options.append(("3", "Посетить таверну"))
@@ -4383,7 +4432,6 @@ class Game:
                     menu_options.append(("5", "Посетить бордель"))
                 menu_options.append(("6", "Поговорить с жителями"))
             
-            # Личные действия
             menu_options.append(("7", "Статус персонажа"))
             menu_options.append(("8", "Инвентарь"))
             menu_options.append(("9", "Квесты"))
@@ -4391,7 +4439,6 @@ class Game:
             menu_options.append(("11", "Сохранить игру"))
             menu_options.append(("12", "Выйти в главное меню"))
             
-            # Перенумеровываем опции
             renumbered_options = []
             for i, (_, desc) in enumerate(menu_options, 1):
                 renumbered_options.append((str(i), desc))
@@ -4401,33 +4448,31 @@ class Game:
             
             choice = self.get_choice(1, len(menu_options))
             
-            # Обработка выбора
-            if choice == 1:  # Исследовать локацию
+            if choice == 1:
                 self.explore_location(current_loc)
-            elif choice == 2:  # Путешествовать
+            elif choice == 2:
                 self.travel()
-            elif choice == 3 and current_loc.type == LocationType.TOWN and current_loc.has_tavern:  # Таверна
+            elif choice == 3 and current_loc.type == LocationType.TOWN and current_loc.has_tavern:
                 self.visit_tavern()
-            elif choice == 4 and current_loc.type == LocationType.TOWN and current_loc.has_shop:  # Магазин
+            elif choice == 4 and current_loc.type == LocationType.TOWN and current_loc.has_shop:
                 self.visit_shop()
-            elif choice == 5 and current_loc.type == LocationType.TOWN and current_loc.has_bordello:  # Бордель
+            elif choice == 5 and current_loc.type == LocationType.TOWN and current_loc.has_bordello:
                 self.visit_bordello()
-            elif choice == 6 and current_loc.type == LocationType.TOWN:  # Поговорить с жителями
+            elif choice == 6 and current_loc.type == LocationType.TOWN:
                 self.talk_to_npcs()
-            elif choice == 7:  # Статус персонажа
+            elif choice == 7:
                 self.show_status()
-            elif choice == 8:  # Инвентарь
+            elif choice == 8:
                 self.show_inventory()
-            elif choice == 9:  # Квесты
+            elif choice == 9:
                 self.show_quests()
-            elif choice == 10:  # Достижения
+            elif choice == 10:
                 self.show_achievements()
-            elif choice == 11:  # Сохранить игру
+            elif choice == 11:
                 self.save_game_menu()
-            elif choice == 12:  # Выйти в главное меню
+            elif choice == 12:
                 break
             
-            # Проверка, не умер ли игрок
             if self.player and self.player.health <= 0:
                 return
         
@@ -4437,7 +4482,7 @@ class Game:
     def run(self):
         """Запуск игры"""
         try:
-            print(f"{Color.CYAN}Загрузка игры 'Драконовое заклинание - Улучшенная версия 2.0.2'...{Color.END}")
+            print(f"{Color.CYAN}Загрузка игры 'Драконовое заклинание - Улучшенная версия 2.0.3'...{Color.END}")
             time.sleep(1)
             
             self.main_menu()
@@ -4449,10 +4494,9 @@ class Game:
             traceback.print_exc()
             input("Нажмите Enter для выхода...")
 
-# Запуск игры
 if __name__ == "__main__":
     try:
-        print(f"{Color.CYAN}Загрузка игры 'Драконовое заклинание - Улучшенная версия 2.0.2'...{Color.END}")
+        print(f"{Color.CYAN}Загрузка игры 'Драконовое заклинание - Улучшенная версия 2.0.3'...{Color.END}")
         time.sleep(1)
         
         game = Game()

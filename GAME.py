@@ -1993,7 +1993,6 @@ class Game:
             print(f"\nТип: {location.type.value}")
             print(f"Уровень сложности: {location.level_range[0]}-{location.level_range[1]}")
             
-            # ИСПРАВЛЕНИЕ: показываем реальное количество врагов
             if location.cleared:
                 print(f"{Color.GREEN}✓ Локация очищена{Color.END}")
             elif not location.enemies:
@@ -2001,13 +2000,11 @@ class Game:
             
             if location.enemies:
                 print(f"\n{Color.RED}Вы обнаружили врагов:{Color.END}")
-                # Показываем до 7 врагов (было 5)
                 for i, enemy in enumerate(location.enemies[:7], 1):
                     health_percent = (enemy.health / enemy.max_health) * 100
                     health_color = Color.GREEN if health_percent > 50 else Color.YELLOW if health_percent > 20 else Color.RED
                     print(f"  {i}. {enemy.name} ({health_color}❤ {enemy.health}/{enemy.max_health}{Color.END})")
                 
-                # Показываем сколько всего врагов
                 if len(location.enemies) > 7:
                     print(f"  ... и еще {len(location.enemies) - 7} врагов")
                 else:
@@ -2019,54 +2016,36 @@ class Game:
             
             print(f"\n{Color.CYAN}{'-'*70}{Color.END}")
             
-            options = []
-            option_map = {}
-            option_index = 1
-            
-            option_map[option_index] = ("Исследовать дальше", self.explore_further, [location])
-            options.append((str(option_index), "Исследовать дальше"))
-            option_index += 1
+            # Создаем динамическое меню
+            menu_items = []
+            menu_items.append(("Исследовать дальше", self.explore_further, [location]))
             
             if location.enemies:
-                option_map[option_index] = ("Сражаться с врагами", self.start_battle, [location])
-                options.append((str(option_index), "Сражаться с врагами"))
-                option_index += 1
+                menu_items.append(("Сражаться с врагами", self.start_battle, [location]))
             
-            option_map[option_index] = ("Искать сокровища", self.search_treasure, [location])
-            options.append((str(option_index), "Искать сокровища"))
-            option_index += 1
+            menu_items.append(("Искать сокровища", self.search_treasure, [location]))
             
             if location.type == LocationType.TOWN:
                 if location.has_tavern:
-                    option_map[option_index] = ("Посетить таверну", self.visit_tavern, [])
-                    options.append((str(option_index), "Посетить таверну"))
-                    option_index += 1
+                    menu_items.append(("Посетить таверну", self.visit_tavern, []))
                 if location.has_shop:
-                    option_map[option_index] = ("Посетить магазин", self.visit_shop, [])
-                    options.append((str(option_index), "Посетить магазин"))
-                    option_index += 1
+                    menu_items.append(("Посетить магазин", self.visit_shop, []))
                 if location.has_bordello:
-                    option_map[option_index] = ("Посетить бордель", self.visit_bordello, [])
-                    options.append((str(option_index), "Посетить бордель"))
-                    option_index += 1
-                option_map[option_index] = ("Поговорить с жителями", self.talk_to_npcs, [])
-                options.append((str(option_index), "Поговорить с жителями"))
-                option_index += 1
+                    menu_items.append(("Посетить бордель", self.visit_bordello, []))
+                menu_items.append(("Поговорить с жителями", self.talk_to_npcs, []))
             
-            option_map[option_index] = ("Осмотреть местность", self.examine_area, [])
-            options.append((str(option_index), "Осмотреть местность"))
-            option_index += 1
+            menu_items.append(("Осмотреть местность", self.examine_area, []))
+            menu_items.append(("Вернуться", None, []))
             
-            option_map[option_index] = ("Вернуться", None, [])
-            options.append((str(option_index), "Вернуться"))
+            # Отображение меню
+            for i, (description, _, _) in enumerate(menu_items, 1):
+                print(f"{i}. {description}")
             
-            for key, desc in options:
-                print(f"{key}. {desc}")
+            choice = self.get_choice(1, len(menu_items))
             
-            choice = self.get_choice(1, len(options))
-            
-            if choice < len(options):
-                _, func, args = option_map[choice]
+            # Обработка выбора
+            if choice < len(menu_items):
+                description, func, args = menu_items[choice - 1]
                 if func:
                     func(*args)
                     if self.player and self.player.health <= 0:
@@ -2539,7 +2518,8 @@ class Game:
         
         sorted_enemies = sorted(location.enemies, key=lambda x: x.level)
         
-        for i, enemy in enumerate(sorted_enemies[:7], 1):  # Увеличили до 7 врагов
+        # Показываем врагов
+        for i, enemy in enumerate(sorted_enemies[:7], 1):
             health_percent = (enemy.health / enemy.max_health) * 100
             health_color = Color.GREEN if health_percent > 50 else Color.YELLOW if health_percent > 20 else Color.RED
             
@@ -2558,17 +2538,20 @@ class Game:
             if enemy.special_abilities:
                 print(f"   Способности: {', '.join(enemy.special_abilities)}")
         
+        # Добавляем дополнительные опции
         print(f"\n{len(sorted_enemies[:7]) + 1}. Сражаться со случайным врагом")
         print(f"{len(sorted_enemies[:7]) + 2}. Вернуться")
         
-        choice = self.get_choice(1, len(sorted_enemies[:7]) + 2)
+        max_choice = len(sorted_enemies[:7]) + 2
+        choice = self.get_choice(1, max_choice)
         
-        if choice == len(sorted_enemies[:7]) + 1:
-            enemy = random.choice(location.enemies)
-            self.battle(enemy, location)
-        elif choice <= len(sorted_enemies[:7]):
+        if choice <= len(sorted_enemies[:7]):
             enemy = sorted_enemies[choice - 1]
             self.battle(enemy, location)
+        elif choice == len(sorted_enemies[:7]) + 1:
+            enemy = random.choice(location.enemies)
+            self.battle(enemy, location)
+        # choice == max_choice - вернуться
     
     def battle(self, enemy: Enemy, location: Location):
         """Битва с врагом - ДОБАВЛЕН ФУНКЦИОНАЛ СПЕЦИАЛЬНЫХ ЭФФЕКТОВ"""
@@ -4418,59 +4401,45 @@ class Game:
             
             print(f"\n{Color.CYAN}{'-'*70}{Color.END}")
             
-            menu_options = []
+            # Динамическое построение меню
+            menu_actions = []
+            menu_display = []
             
-            menu_options.append(("1", "Исследовать локацию"))
-            menu_options.append(("2", "Путешествовать"))
+            # Всегда доступные опции
+            menu_actions.append(("Исследовать локацию", self.explore_location, [current_loc]))
+            menu_actions.append(("Путешествовать", self.travel, []))
             
+            # Динамические опции для городов
             if current_loc.type == LocationType.TOWN:
                 if current_loc.has_tavern:
-                    menu_options.append(("3", "Посетить таверну"))
+                    menu_actions.append(("Посетить таверну", self.visit_tavern, []))
                 if current_loc.has_shop:
-                    menu_options.append(("4", "Посетить магазин"))
+                    menu_actions.append(("Посетить магазин", self.visit_shop, []))
                 if current_loc.has_bordello:
-                    menu_options.append(("5", "Посетить бордель"))
-                menu_options.append(("6", "Поговорить с жителями"))
+                    menu_actions.append(("Посетить бордель", self.visit_bordello, []))
+                menu_actions.append(("Поговорить с жителями", self.talk_to_npcs, []))
             
-            menu_options.append(("7", "Статус персонажа"))
-            menu_options.append(("8", "Инвентарь"))
-            menu_options.append(("9", "Квесты"))
-            menu_options.append(("10", "Достижения"))
-            menu_options.append(("11", "Сохранить игру"))
-            menu_options.append(("12", "Выйти в главное меню"))
+            # Всегда доступные в конце
+            menu_actions.append(("Статус персонажа", self.show_status, []))
+            menu_actions.append(("Инвентарь", self.show_inventory, []))
+            menu_actions.append(("Квесты", self.show_quests, []))
+            menu_actions.append(("Достижения", self.show_achievements, []))
+            menu_actions.append(("Сохранить игру", self.save_game_menu, []))
+            menu_actions.append(("Выйти в главное меню", None, []))
             
-            renumbered_options = []
-            for i, (_, desc) in enumerate(menu_options, 1):
-                renumbered_options.append((str(i), desc))
+            # Отображение меню
+            for i, (description, _, _) in enumerate(menu_actions, 1):
+                print(f"{i}. {description}")
             
-            for key, desc in renumbered_options:
-                print(f"{key}. {desc}")
+            choice = self.get_choice(1, len(menu_actions))
             
-            choice = self.get_choice(1, len(menu_options))
-            
-            if choice == 1:
-                self.explore_location(current_loc)
-            elif choice == 2:
-                self.travel()
-            elif choice == 3 and current_loc.type == LocationType.TOWN and current_loc.has_tavern:
-                self.visit_tavern()
-            elif choice == 4 and current_loc.type == LocationType.TOWN and current_loc.has_shop:
-                self.visit_shop()
-            elif choice == 5 and current_loc.type == LocationType.TOWN and current_loc.has_bordello:
-                self.visit_bordello()
-            elif choice == 6 and current_loc.type == LocationType.TOWN:
-                self.talk_to_npcs()
-            elif choice == 7:
-                self.show_status()
-            elif choice == 8:
-                self.show_inventory()
-            elif choice == 9:
-                self.show_quests()
-            elif choice == 10:
-                self.show_achievements()
-            elif choice == 11:
-                self.save_game_menu()
-            elif choice == 12:
+            # Обработка выбора
+            if choice < len(menu_actions):
+                description, func, args = menu_actions[choice - 1]
+                if func:
+                    func(*args)
+            else:
+                # Последний пункт - выход
                 break
             
             if self.player and self.player.health <= 0:
